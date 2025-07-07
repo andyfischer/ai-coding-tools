@@ -4,55 +4,55 @@ Candle is a local process manager optimized for AI agents.
 
 ## Features
 
-- **MCP Integration** - Processes can be launched and monitored by an AI agent using the MCP server.
-- Commands and processes are organized by their directory.
+- MCP Integration: Processes can be launched and monitored by an AI agent using the MCP server.
+- Simple interface: Commands are stored 
 - Enforces limits so the same command is never launched more than once.
 - Builtin unique port assignment (see 'Port Assignment' below)
 
-## Installation using `npx`
+## Installation using `npx` (fastest)
 
-TODO: Will add instructions here.
+With Node.js installed, run `npx @andyfischer/candle --mcp`
 
-## Local installation from source.
+Example command to add the MCP to Claude Code:
+
+    $ claude mcp add candle -s user npx @andyfischer/candle --mcp
+
+## Global installation (fast)
+
+Install globally using npm:
+
+    $ npm i -g @andyfischer/candle
+
+Then add `candle --mcp` to your MCP configuration.
+
+## Installing from source
 
  - Must have Node.js installed. (Version 22.x or above recommended)
  - Download the project with `git clone`
  - Run `npm install` and `npm run build`
- - Add the 'bin' folder to your PATH
-
-## MCP setup ##
-
-Add the MCP server to Claude Code (for the entire user):
-
-    $ claude mcp add candle -s user candle-mcp
-
-Add the MCP server to Claude Code (for the local project):
-
-    $ claude mcp add candle -s project candle-mcp
+ - Add the 'bin' folder to your PATH. Or run `npm i -g .`
 
 ## Agent Usage ##
 
-Once the MCP is installed, the agent should be able to figure it out. These
-commands have been tested using Claude Code.
+This tool has been tested with Claude Code.
 
-    "Start the server using Candle"
+Once the MCP is installed, you might need to encourage the agent to
+use the service, either through your prompt or your setup .md file.
 
-    > Should trigger SetCommand and StartService tools
-
-    "Check the service logs"
-
-    > Should trigger the GetLogs tool.
+For example saying "Start the server using Candle" works pretty well.
+After that, Claude seems to do pretty well at using the other commands
+such as GetLogs.
 
 Full list of MCP tools available:
 
 | name | description |
-| ---------- | ------------------------------------------------- |
-| SetCommand | Sets the shell command used to launch a service. |
-| StartService | Start the service for the current directory. |
-| GetLogs | List the recent stdout & stderr logs for the locally running service |
-| KillService | Kill the running service process. |
+| -------------- | ------------------------------------------------- |
+| SetCommand     | Sets the shell command used to launch a service. |
+| StartService   | Start the service for the current directory. |
+| GetLogs        | List the recent stdout & stderr logs for the locally running service |
+| KillService    | Kill the running service process. |
 | RestartService | Restart the running service process. |
-| ListServices | Fetch metadata for running services including their assigned port. |
+| ListServices   | Fetch metadata for running services including their assigned port. |
 
 # CLI Commands #
 
@@ -128,11 +128,6 @@ Kill all processes that were launched by Candle.
 
 Delete the database stored in `~/.candle`.
 
-# Debugging
-
-If you add `export LEMON_ENABLE_LOGS=1` to your environment, this will enable logging to a `candle.log` file.
-This will log all MCP requests and responses.
-
 # Port Assignment #
 
 By default, each process will be launched with a unique port number assigned to the `PORT` environment variable.
@@ -140,3 +135,9 @@ Port numbers start at 3001. Candle will pre-check each port to verify that it's 
 
 In order for your service to use these, it will need to actually use the `PORT` environment variable.
 Some tools like Next.js use this by default. Some tools like Vite need to be specifically configured to use it.
+
+# Debugging
+
+If you add `export CANDLE_ENABLE_LOGS=1` to your environment, this will enable logging to a `candle.log` file.
+This will log all MCP requests and responses.
+

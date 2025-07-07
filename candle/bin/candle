@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { main } = require('../packages/candle/dist/cli-main.js');
+const { main } = require('../dist/cli-main.js');
 
 main()
 .catch(error => {

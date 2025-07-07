@@ -1,10 +1,8 @@
-# TypeScript Hook Validator
+# ts-rubberstamp
 
-Rust-based Claude Code hook that automatically approves some safe TypeScript file edits.
+Claude Code hook that automatically approves some safe TypeScript file edits.
 
-## Features
-
-Will auto-approve edits to Typescript files that are:
+Currently the tool will autoapprove changes that look like:
 
 - **Formatting-only changes**: Whitespace, indentation, and formatting adjustments
 - **Import statement changes**: Adding, modifying, or removing import statements

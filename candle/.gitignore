@@ -1,5 +1,6 @@
 node_modules
 candle.log
 target
+dist
 *.tsbuildinfo
 

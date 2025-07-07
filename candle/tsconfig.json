@@ -1,21 +1,19 @@
 {
   "compilerOptions": {
     "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
+      "es2020"
     ],
     "target": "es2020",
     "module": "commonjs",
+    "moduleResolution": "node",
     "allowJs": true,
     "skipLibCheck": true,
     "strict": false,
-    "jsx": "react",
+    "noImplicitAny": true,
     "esModuleInterop": true,
-    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noImplicitAny": false,
     "rootDir": "src",
     "outDir": "dist",
     "sourceMap": true,
