@@ -1,6 +1,6 @@
 {
   "name": "@andyfischer/candle",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "license": "MIT",
   "main": "dist/index.js",
   "bin": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "dev": "tsc-watch -p . --onSuccess \"node dist/cli-main.js\"",
+    "dev": "tsc-watch -p . --onSuccess \"node dist/main.js\"",
     "tsc": "tsc",
     "test": "vitest",
     "prepare": "tsc -p ."
@@ -25,7 +25,7 @@
     "source-map-support": "0.5.21",
     "tree-kill": "1.2.2",
     "yargs": "17.7.2",
-    "@andyfischer/sqlite-wrapper": "0.1.2",
+    "@andyfischer/sqlite-wrapper": "0.2.0",
     "@andyfischer/subprocess-wrapper": "0.1.2"
   },
   "devDependencies": {

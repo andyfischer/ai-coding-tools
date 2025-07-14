@@ -2,6 +2,18 @@
 
 Candle is a local process manager optimized for AI agents.
 
+## Motivation
+
+By default, Claude Code has trouble launching local servers for you. It often
+does commands like `npm run dev &` which causes issues with leftover processes
+running in the background, and no way for Claude to see the stdout for the server.
+
+I wrote `candle` to make this much easier for Claude, this tool provides a much
+more foolproof way to start the services, and gives it a reliable way to see recent logs.
+
+Think of this as a simple alternative to `pm2` but optimized for local development
+and working with coding AIs.
+
 ## Features
 
 - MCP Integration: Processes can be launched and monitored by an AI agent using the MCP server.

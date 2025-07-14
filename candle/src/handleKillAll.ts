@@ -1,4 +1,5 @@
 import * as Db from './database';
+
 export interface KillAllOutput {
     killedProcesses: {
         launchId: number;
@@ -29,9 +30,11 @@ export interface KillAllOutput {
     };
     message?: string;
 }
+
 export async function handleKillAll(): Promise<KillAllOutput> {
     // Get all running processes
     const runningProcesses = Db.getRunningProcesses();
+    
     if (runningProcesses.length === 0) {
         return {
             killedProcesses: [],
@@ -46,13 +49,16 @@ export async function handleKillAll(): Promise<KillAllOutput> {
             message: 'No running processes found to kill.'
         };
     }
+    
     const killedProcesses = [];
     const failedProcesses = [];
     const alreadyDeadProcesses = [];
+    
     for (const server of runningProcesses) {
         try {
             // Check if process is actually running
             const isRunning = Db.isProcessRunning(server.pid);
+            
             if (!isRunning) {
                 alreadyDeadProcesses.push({
                     launchId: server.launch_id,
@@ -63,35 +69,41 @@ export async function handleKillAll(): Promise<KillAllOutput> {
                 Db.setProcessExited(server.launch_id, -1);
                 continue;
             }
+            
             // Kill the main process
             process.kill(server.pid, 'SIGTERM');
+            
             // Also kill the wrapper process if it exists
             if (server.wrapper_pid) {
                 try {
                     process.kill(server.wrapper_pid, 'SIGTERM');
-                }
-                catch (error) {
+                } catch (error) {
                     // Wrapper process might already be dead, that's okay
                 }
             }
+            
             // Wait a moment and check if it's still running
             await new Promise(resolve => setTimeout(resolve, 100));
+            
             if (Db.isProcessRunning(server.pid)) {
                 // Force kill if SIGTERM didn't work
                 process.kill(server.pid, 'SIGKILL');
+                
                 // Force kill wrapper process too
                 if (server.wrapper_pid && Db.isProcessRunning(server.wrapper_pid)) {
                     try {
                         process.kill(server.wrapper_pid, 'SIGKILL');
-                    }
-                    catch (error) {
+                    } catch (error) {
                         // Ignore errors for wrapper process cleanup
                     }
                 }
+                
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
+            
             // Update database status
             Db.setProcessExited(server.launch_id, -9); // SIGKILL exit code
+            
             killedProcesses.push({
                 launchId: server.launch_id,
                 command: server.command_name,
@@ -99,8 +111,8 @@ export async function handleKillAll(): Promise<KillAllOutput> {
                 wrapperPid: server.wrapper_pid || undefined,
                 directory: server.working_directory
             });
-        }
-        catch (error) {
+            
+        } catch (error) {
             failedProcesses.push({
                 launchId: server.launch_id,
                 command: server.command_name,
@@ -111,6 +123,7 @@ export async function handleKillAll(): Promise<KillAllOutput> {
             });
         }
     }
+    
     return {
         killedProcesses,
         failedProcesses,
@@ -123,31 +136,38 @@ export async function handleKillAll(): Promise<KillAllOutput> {
         }
     };
 }
+
 export function printKillAllOutput(killAllOutput: KillAllOutput): void {
     if (killAllOutput.message) {
         console.log(killAllOutput.message);
         return;
     }
+    
     console.log(`Found ${killAllOutput.summary.totalFound} running process(es) to kill.`);
+    
     // Print already dead processes
     for (const process of killAllOutput.alreadyDeadProcesses) {
         console.log(`Process with launch ID '${process.launchId}' (PID ${process.pid}) already dead, updating status`);
     }
+    
     // Print wrapper process messages during kill attempts
     for (const process of killAllOutput.killedProcesses) {
         if (process.wrapperPid) {
             console.log(`Wrapper process ${process.wrapperPid} already dead or not found`);
         }
     }
+    
     // Print SIGTERM/SIGKILL messages (simplified for output)
     for (const process of killAllOutput.killedProcesses) {
         console.log(`SIGTERM failed for PID ${process.pid}, sending SIGKILL`);
         console.log(`Killed process with launch ID '${process.launchId}' (PID ${process.pid}${process.wrapperPid ? `, wrapper PID ${process.wrapperPid}` : ''}): ${process.command}`);
     }
+    
     // Print failed processes
     for (const process of killAllOutput.failedProcesses) {
         console.error(`Failed to kill process with launch ID '${process.launchId}' (PID ${process.pid}): ${process.error}`);
     }
+    
     // Summary
     if (killAllOutput.summary.killed > 0) {
         console.log(`\nSuccessfully killed ${killAllOutput.summary.killed} process(es).`);

@@ -12,13 +12,13 @@
   resolved "https://registry.npmjs.org/@andyfischer/parse-stdout-lines/-/parse-stdout-lines-0.1.2.tgz"
   integrity sha512-Q4ZbBTzScnOee1jGO/lxVC4B7J1NCcYVwyfRuQt3X4pqNztlq0IbHHr+RUlQINxdaRN8LZSdPQzZe+Td1wXKEA==
 
-"@andyfischer/sqlite-wrapper@0.1.2":
-  version "0.1.2"
-  resolved "https://registry.npmjs.org/@andyfischer/sqlite-wrapper/-/sqlite-wrapper-0.1.2.tgz"
-  integrity sha512-16F1CvSv0Le3m5v4bfXVaKrdZwB+rbjdZVTWnVXKPtYCADPmDotWz5NiXIF9mlZDQygSqxJOZa3Ceb8KLvXbhg==
+"@andyfischer/sqlite-wrapper@0.2.0":
+  version "0.2.0"
+  resolved "https://registry.yarnpkg.com/@andyfischer/sqlite-wrapper/-/sqlite-wrapper-0.2.0.tgz#fab7b6f797075d0f99ebbac15573eb5a2a558615"
+  integrity sha512-jPzfbewyzg+Aj22OVeI9gzGBJQ3bmm/y1TzvTLwrHiwW4InD8QErPdrLmmh9gdYn50pfqQIh2mg6nyWiFjy8xQ==
   dependencies:
     "@andyfischer/generic-lexer" "0.1.1"
-    "@andyfischer/streams" "0.2.0"
+    "@andyfischer/streams" "0.3.0"
     better-sqlite3 "11.8.1"
     vitest "^3.0.6"
 
@@ -26,6 +26,11 @@
   version "0.2.0"
   resolved "https://registry.npmjs.org/@andyfischer/streams/-/streams-0.2.0.tgz"
   integrity sha512-FVltY1cb1sk1WVZx1TKEFBvdNtMfvZHsWpOjXHyPaV4VYoL0ohRcvZUQQ6gmgRay2Xvw7hFl7OCA98M0AaT+sA==
+
+"@andyfischer/streams@0.3.0":
+  version "0.3.0"
+  resolved "https://registry.yarnpkg.com/@andyfischer/streams/-/streams-0.3.0.tgz#4a0951178159d687f56825a46d5d8b85d70d3080"
+  integrity sha512-19LccD24FjFvyhNt00LxdKWBswXwnWs1IyyaJsQVjy3K+kJJ17CsXwP/anNjUKNy5J5a5SLmxhlS/Hi7LbEPXg==
 
 "@andyfischer/subprocess-wrapper@0.1.2":
   version "0.1.2"
