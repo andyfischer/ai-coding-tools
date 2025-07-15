@@ -1,4 +1,5 @@
 import { DatabaseLoader, SqliteDatabase } from '@andyfischer/sqlite-wrapper';
+import { Stream } from '@andyfischer/streams'
 import * as Path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -86,7 +87,8 @@ export function getDatabase({overrideDirectory}: {overrideDirectory?: string} = 
         const dbPath = Path.join(stateDir, 'candle.db');
         const loader = new DatabaseLoader({
             filename: dbPath,
-            schema
+            schema,
+            logs: (new Stream()).logToConsole(),
         });
         _db = loader.load();
         

@@ -1,4 +1,8 @@
 
+# 0.5.1
+
+ - update 'sqlite-wrapper' and 'streams' dependencies.
+
 # 0.5.0
 
  - Add commands: assign-port and clear-logs.
