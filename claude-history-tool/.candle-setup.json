@@ -1,0 +1,21 @@
+{
+  "services": [
+    {
+      "name": "tsc",
+      "shell": "npm run dev:main",
+      "default": true
+    },
+    {
+      "name": "renderer",
+      "shell": "npm run dev:renderer"
+    },
+    {
+      "name": "electron",
+      "shell": "npm run dev:electron"
+    },
+    {
+      "name": "storybook",
+      "shell": "npm run storybook"
+    }
+  ]
+}

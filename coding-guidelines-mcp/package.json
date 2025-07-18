@@ -1,0 +1,30 @@
+{
+  "name": "@andyfischer/coding-guidelines-mcp",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "bin": {
+    "coding-guidelines-mcp": "./bin/coding-guidelines-mcp"
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.16.0",
+    "@types/node": "24.0.15",
+    "gray-matter": "4.0.3",
+    "source-map-support": "0.5.21",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+}

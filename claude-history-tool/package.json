@@ -1,0 +1,71 @@
+{
+  "name": "claude-history-tool",
+  "version": "1.0.0",
+  "description": "A tool to browse and view Claude chat history",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "parcel build src/renderer/index.html --dist-dir dist/renderer",
+    "dev:main": "tsc -p tsconfig.main.json --watch",
+    "dev:renderer": "parcel serve --target renderer --port ${RENDERER_PORT:-3447}",
+    "dev:electron": "NODE_ENV=development electron .",
+    "start": "electron .",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "storybook": "storybook dev -p ${STORYBOOK_PORT:-3448}",
+    "build-storybook": "storybook build",
+    "rebuild": "electron rebuild"
+  },
+  "targets": {
+    "renderer": {
+      "source": "src/renderer/index.html",
+      "distDir": "dist"
+    }
+  },
+  "keywords": [
+    "electron",
+    "claude",
+    "chat",
+    "history"
+  ],
+  "author": "Andy Fischer",
+  "license": "MIT",
+  "devDependencies": {
+    "@parcel/transformer-sass": "2.15.4",
+    "@storybook/addon-essentials": "^8.3.0",
+    "@storybook/addon-interactions": "^8.3.0",
+    "@storybook/addon-links": "^8.3.0",
+    "@storybook/blocks": "^8.3.0",
+    "@storybook/react": "^8.3.0",
+    "@storybook/react-vite": "^8.3.0",
+    "@storybook/test": "^8.3.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.5.0",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.0.1",
+    "electron": "^32.0.0",
+    "electron-rebuild": "3.2.9",
+    "jsdom": "^25.0.0",
+    "parcel": "^2.12.0",
+    "process": "^0.11.10",
+    "storybook": "^8.3.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "3.2.4"
+  },
+  "dependencies": {
+    "@andyfischer/sqlite-wrapper": "^0.3.1",
+    "@tanstack/react-query": "5.83.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-icons": "5.5.0",
+    "react-router-dom": "^6.26.0"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+}
