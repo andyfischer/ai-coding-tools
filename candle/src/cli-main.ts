@@ -3,65 +3,31 @@
 import 'source-map-support/register';
 import * as yargs from 'yargs';
 import { Argv } from 'yargs';
-import { handleRun } from './handleRun';
-import { handleList, printListOutput } from './handleList';
-import { handleKill, printKillOutput } from './handleKill';
-import { handleKillAll, printKillAllOutput } from './handleKillAll';
-import { handleSetCommand } from './handleSetCommand';
-import { handleDeleteCommand, printDeleteCommandOutput } from './handleDeleteCommand';
-import { handleRestart, printRestartOutput } from './handleRestart';
+import { handleRun, handleStart } from './handleRun';
+import { handleList } from './handleList';
+import { handleKill } from './handleKill';
+import { handleKillAll } from './handleKillAll';
+import { handleRestart } from './handleRestart';
 import { handleClearDatabaseCommand } from './handleClearDatabase';
 import { handleClearLogsCommand } from './handleClearLogs';
 import { handleLogs } from './handleLogs';
-import { handleConfig, printConfigOutput } from './handleConfig';
 import { handleWatch } from './handleWatch';
-import { handleAssignPort, printAssignPortOutput } from './handleAssignPort';
 import { NeedRunCommandError } from './errors';
 import { serveMCP } from './mcp';
+import { findProjectDir } from './setupFile';
+import { addServerConfig } from './addServerConfig';
 
-function parseArgs(): { command: string, commandName: string, sectionAfterDash: string | undefined, json: boolean, mcp: boolean, assignPortOptions?: { port?: number, commandName?: string } } {
-    // Check for '--' and extract the command after it
+function parseArgs(): { command: string, commandName: string, commandNames: string[], mcp: boolean, shell?: string, root?: string, env?: Record<string, string>, default?: boolean } {
     const args = process.argv.slice(2);
-    const dashIndex = args.indexOf('--');
-
-    let sectionAfterDash: string | undefined;
-    let yargsArgs = args;
-
-    if (dashIndex !== -1) {
-        // Everything after '--' becomes the run command
-        const afterDash = args.slice(dashIndex + 1);
-        if (afterDash.length > 0) {
-            sectionAfterDash = afterDash.join(' ');
-        }
-
-        yargsArgs = [...args.slice(0, dashIndex)];
-    }
 
     const argv = yargs
-        .option('json', {
-            type: 'boolean',
-            describe: 'Output raw JSON data',
-            default: false
-        })
         .option('mcp', {
             type: 'boolean',
             describe: 'Enter MCP server mode',
             default: false
         })
-        .command('set-command [name]', 'Set the default run command for the current directory', () => {})
-        .command('delete-command [name]', 'Delete a saved run command for the current directory', () => {})
-        .command('assign-port <port> [name]', 'Assign a port to the current project', (yargs: Argv) => {
-            return yargs
-                .positional('port', {
-                    describe: 'Port number to assign',
-                    type: 'number'
-                })
-                .positional('name', {
-                    describe: 'Command name (optional, defaults to "default")',
-                    type: 'string'
-                });
-        })
         .command('run [name]', 'Launch process', (yargs: Argv) => { })
+        .command('start [name...]', 'Start process(es) in background and exit', (yargs: Argv) => { })
         .command('restart [name]', 'Restart a process service', () => {})
         .command(['kill [name]', 'stop [name]'], 'Kill processes started in the current working directory', (yargs: Argv) => { })
         .command('kill-all', 'Kill all running processes that are tracked by Candle', (yargs: Argv) => {})
@@ -69,44 +35,50 @@ function parseArgs(): { command: string, commandName: string, sectionAfterDash: 
         .command('list-all', 'List all active processes', (yargs: Argv) => { })
         .command('logs [name]', 'Show recent logs for a process', () => {})
         .command('watch [name]', 'Watch live output from a running process', () => {})
-        .command('config', 'Show configured commands for the current directory', (yargs: Argv) => { })
         .command('clear-logs [name]', 'Clear logs for commands in the current directory', () => {})
         .command('erase-database', 'Erase the database stored at ~/.candle', () => {})
+        .command('add-service <name> <shell>', 'Add a new service to .candle-setup.json', (yargs: Argv) => {
+            yargs
+                .positional('name', {
+                    describe: 'Name of the service',
+                    type: 'string'
+                })
+                .positional('shell', {
+                    describe: 'Shell command to run the service',
+                    type: 'string'
+                })
+                .option('root', {
+                    describe: 'Root directory for the service',
+                    type: 'string'
+                })
+                .option('env', {
+                    describe: 'Environment variables as JSON string',
+                    type: 'string'
+                })
+                .option('default', {
+                    describe: 'Mark this service as default',
+                    type: 'boolean',
+                    default: false
+                });
+        })
         .demandCommand(0, 'You need to specify a command')
         .help()
-        .parseSync(yargsArgs);
+        .parseSync(args);
 
     const command = argv._[0] as string;
-    const commandName = (argv.name as string) || 'default';
-    const json = argv.json as boolean;
+    const commandName = (argv.name as string);
+    const commandNames = Array.isArray(argv.name) ? argv.name as string[] : (argv.name ? [argv.name as string] : []);
     const mcp = argv.mcp as boolean;
+    const shell = argv.shell as string;
+    const root = argv.root as string;
+    const env = argv.env ? JSON.parse(argv.env as string) : undefined;
+    const defaultFlag = argv.default as boolean;
     
-    let assignPortOptions: { port?: number, commandName?: string } | undefined;
-    if (command === 'assign-port') {
-        // For assign-port, now port is the first argument and name is optional second
-        assignPortOptions = {
-            port: argv.port as number,
-            commandName: argv.name as string || 'default'
-        };
-    }
-    
-    return { command, commandName, sectionAfterDash, json, mcp, assignPortOptions };
-}
-
-function isStdinActive(): boolean {
-    return process.stdin.isTTY === false;
+    return { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag };
 }
 
 export async function main(): Promise<void> {
-    // Check if no arguments and stdin is active (piped) - enter MCP mode
-    /* Disabled for now
-    if (process.argv.length === 2 && isStdinActive()) {
-        await serveMCP();
-        return;
-    }
-    */
-
-    const { command, commandName, sectionAfterDash, json, mcp, assignPortOptions } = parseArgs();
+    const { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag } = parseArgs();
 
     // Check if no arguments - print help
     if (process.argv.length === 2) {
@@ -120,92 +92,151 @@ export async function main(): Promise<void> {
         return;
     }
 
-    function printOutput(prettyPrintFn: (data: any) => void, data: any) {
-        if (json) {
-            console.log(JSON.stringify(data, null, 2));
-        } else {
-            prettyPrintFn(data);
-        }
-    }
 
     try {
         switch (command) {
-            case 'run':
-                await handleRun({ commandName, setCommandString: sectionAfterDash, consoleOutputFormat: json ? 'json' : 'pretty' });
+            case 'run': {
+                const projectDir = findProjectDir();
+                const output = await handleRun({ projectDir, commandName, watchLogs: true, consoleOutputFormat: 'pretty' });
+                if (output.killedProcesses && output.killedProcesses.length > 0) {
+                    for (const process of output.killedProcesses) {
+                        console.log(`Killed '${process.command}' process with PID: ${process.pid}`);
+                    }
+                }
+                console.log(output.message);
                 break;
+            }
+            case 'start': {
+                const output = await handleStart({ commandNames, consoleOutputFormat: 'pretty' });
+                for (const service of output.services) {
+                    if (service.success) {
+                        console.log(`Started '${service.name}' (${service.command}) in ${service.directory} (PID: ${service.wrapperPid})`);
+                    } else {
+                        console.error(`Failed to start service '${service.name}': ${service.error}`);
+                    }
+                }
+                
+                if (output.summary.failureCount > 0) {
+                    console.error(`\nFailed to start ${output.summary.failureCount} service(s)`);
+                    if (output.summary.successCount > 0) {
+                        const successNames = output.services.filter(s => s.success).map(s => s.name);
+                        console.log(`Successfully started ${output.summary.successCount} service(s): ${successNames.join(', ')}`);
+                    }
+                }
+                break;
+            }
             case 'list':
             case 'ls': {
                 const output = await handleList({ });
-                printOutput(printListOutput, output);
+                if (output.message) {
+                    console.log(output.message);
+                } else if (output.processes.length === 0) {
+                    console.log('No active processes found.');
+                } else {
+                    for (const process of output.processes) {
+                        console.log(`${process.serviceName} (${process.command}) - ${process.status} - PID: ${process.pid > 0 ? process.pid : '-'} - Directory: ${process.workingDir}`);
+                    }
+                }
                 break;
             }
             case 'list-all': {
                 const output = await handleList({ showAll: true });
-                printOutput(printListOutput, output);
+                if (output.message) {
+                    console.log(output.message);
+                } else if (output.processes.length === 0) {
+                    console.log('No active processes found.');
+                } else {
+                    for (const process of output.processes) {
+                        console.log(`${process.serviceName} (${process.command}) - ${process.status} - PID: ${process.pid > 0 ? process.pid : '-'} - Directory: ${process.workingDir}`);
+                    }
+                }
                 break;
             }
             case 'kill':
             case 'stop': {
-                const output = await handleKill({ commandName });
-                printOutput(printKillOutput, output);
+                const projectDir = findProjectDir();
+                const output = await handleKill({ projectDir, commandName });
+                if (output.message) {
+                    console.log(output.message);
+                } else {
+                    for (const process of output.killedProcesses) {
+                        console.log(`Killed '${process.command}' process with PID: ${process.pid}`);
+                    }
+                }
                 break;
             }
             case 'kill-all': {
                 const output = await handleKillAll();
-                printOutput(printKillAllOutput, output);
+                if (output.killedProcesses.length === 0) {
+                    console.log('No running processes found to kill');
+                } else {
+                    for (const process of output.killedProcesses) {
+                        console.log(`Killed '${process.command}' process with PID: ${process.pid}`);
+                    }
+                }
                 break;
             }
             case 'restart': {
+                const projectDir = findProjectDir();
                 const output = await handleRestart({ 
+                    projectDir,
                     commandName, 
-                    setCommandString: sectionAfterDash, 
-                    consoleOutputFormat: json ? 'json' : 'pretty' 
+                    consoleOutputFormat: 'pretty',
+                    watchLogs: true
                 });
-                printOutput(printRestartOutput, output);
+                if (output.success) {
+                    console.log(`Service '${commandName}' restarted successfully`);
+                } else {
+                    console.error(output.message);
+                }
                 break;
             }
-            case 'logs':
-                await handleLogs({ commandName });
-                break;
-            case 'watch':
-                await handleWatch({ commandName });
-                break;
-            case 'config': {
-                const output = await handleConfig();
-                printOutput(printConfigOutput, output);
+            case 'logs': {
+                const projectDir = findProjectDir();
+                await handleLogs({ projectDir, commandName });
                 break;
             }
-            case 'set-command':
-                await handleSetCommand({ commandName, commandString: sectionAfterDash });
-                break;
-            case 'delete-command': {
-                const output = await handleDeleteCommand({ commandName });
-                printOutput(printDeleteCommandOutput, output);
+            case 'watch': {
+                const projectDir = findProjectDir();
+                await handleWatch({ projectDir, commandName });
                 break;
             }
-            case 'assign-port': {
-                const output = await handleAssignPort(assignPortOptions || {});
-                printOutput(printAssignPortOutput, output);
+            case 'clear-logs': {
+                const projectDir = findProjectDir();
+                await handleClearLogsCommand({ projectDir, commandName });
                 break;
             }
-            case 'clear-logs':
-                await handleClearLogsCommand({ commandName });
-                break;
             case 'clear-database':
                 await handleClearDatabaseCommand();
                 break;
+            case 'add-service': {
+                try {
+                    addServerConfig({
+                        name: commandName,
+                        shell: shell,
+                        root: root,
+                        env: env,
+                        default: defaultFlag
+                    });
+                    console.log(`Service '${commandName}' added successfully to .candle-setup.json`);
+                } catch (error) {
+                    console.error(`Error adding service: ${error.message}`);
+                    process.exit(1);
+                }
+                break;
+            }
             default:
                 console.error(`Error: Unrecognized command '${command}'`);
-                console.error('Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, config, set-command, delete-command, assign-port, clear-logs, clear-database');
+                console.error('Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, clear-logs, clear-database, add-service');
                 process.exit(1);
         }
     } catch (error) {
         if (error instanceof NeedRunCommandError) {
-            console.error('No start command configured for this directory.');
-            if (commandName === 'default') {
-                console.error('Please set one using: candle run -- <your command>');
+            console.error('No .candle-setup.json file found or service not configured.');
+            if (commandName) {
+                console.error(`Service '${commandName}' not found in .candle-setup.json`);
             } else {
-                console.error(`Please set one using: candle run ${commandName} -- <your command>`);
+                console.error('Please create a .candle-setup.json file to define your services.');
             }
             process.exit(1);
         }

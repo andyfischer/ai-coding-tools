@@ -5,27 +5,77 @@ import { ProjectRootDir } from './dirs';
 import type { WrapperInput } from './runProcessInWrapper';
 import { NeedRunCommandError } from './errors';
 import { watchExistingProcess } from './watchExistingProcess';
-import { allocatePort } from './allocatePort';
-import { saveProjectCommand } from './handleSetCommand';
-import { handleKill, printKillOutput } from './handleKill'
+import { handleKill } from './handleKill';
+import { findSetupFile, findServiceByName, getServiceCwd, findProjectDir } from './setupFile';
 
 interface RunOptions {
-    setCommandString?: string // if provided, save this as the command first
-    cwd?: string // current working directory to run the command in
-    commandName?: string // name of the command (defaults to "default")
-    exitAfterMs?: number // optional timeout to exit watching after a certain period
+    projectDir: string
+    commandName: string 
+    consoleOutputFormat: 'pretty' | 'json'
+    watchLogs: boolean
+}
+
+interface StartOptions {
+    cwd?: string // current working directory to look for .candle-setup.json
+    commandNames?: string[] // names of the services to start
     consoleOutputFormat: 'pretty' | 'json'
 }
 
-export function findProjectStartCommand(cwd: string, commandName: string = 'default'): string | null {
-    // Look up the start command from project config
-    const projectConfig = Db.getProjectConfig(cwd, commandName);
-    
-    if (!projectConfig || !projectConfig.command_str) {
+export interface RunOutput {
+    service: {
+        name: string;
+        command: string;
+        directory: string;
+        pid?: number;
+        wrapperPid?: number;
+    };
+    message: string;
+    killedProcesses?: {
+        command: string;
+        pid: number;
+        wrapperPid?: number;
+        directory: string;
+    }[];
+}
+
+export interface StartOutput {
+    services: Array<{
+        name: string;
+        command: string;
+        directory: string;
+        pid?: number;
+        wrapperPid?: number;
+        success: boolean;
+        error?: string;
+    }>;
+    summary: {
+        totalServices: number;
+        successCount: number;
+        failureCount: number;
+    };
+}
+
+export function findProjectStartCommand(commandName?: string): { command: string; serviceCwd: string; env: Record<string, string>; setupJsonDir: string } | null {
+    const setupResult = findSetupFile();
+    if (!setupResult) {
         return null;
     }
     
-    return projectConfig.command_str;
+    const service = findServiceByName(setupResult.config, commandName);
+    if (!service) {
+        return null;
+    }
+    
+    const serviceCwd = getServiceCwd(service, setupResult.configPath);
+    const env = service.env || {};
+    const setupJsonDir = path.dirname(setupResult.configPath);
+    
+    return {
+        command: service.shell,
+        serviceCwd,
+        env,
+        setupJsonDir
+    };
 }
 
 export function startDetachedWrappedProcess(wrapperInput: WrapperInput): ChildProcess {
@@ -51,55 +101,47 @@ export function startDetachedWrappedProcess(wrapperInput: WrapperInput): ChildPr
     return wrapperProcess;
 }
 
-export async function handleRun(req: RunOptions): Promise<void> {
-    const cwd = req.cwd || process.cwd();
-    const commandName = req.commandName || 'default';
-    const exitAfterMs = req.exitAfterMs;
-    const consoleOutputFormat = req.consoleOutputFormat;
+export async function handleRun(req: RunOptions): Promise<RunOutput> {
+    const { projectDir, commandName, consoleOutputFormat } = req;
     
-    // If setCommandString is provided, save it first
-    if (req.setCommandString) {
-        saveProjectCommand(cwd, commandName, req.setCommandString);
+    // Get the command to run from setup config
+    const serviceInfo = findProjectStartCommand(commandName);
+    if (!serviceInfo) {
+        throw new NeedRunCommandError(projectDir, commandName || 'default');
     }
     
-    // Get the command to run
-    let fullCommand: string;
-    if (req.setCommandString) {
-        fullCommand = req.setCommandString;
-    } else {
-        const foundCommand = findProjectStartCommand(cwd, commandName);
-        if (!foundCommand) {
-            throw new NeedRunCommandError(cwd, commandName);
-        }
-        fullCommand = foundCommand;
-    }
+    const { command: fullCommand, serviceCwd, env, setupJsonDir } = serviceInfo;
 
-    // Check if there's already an existing process
+    // Check if there's already an existing process for this service
     Db.checkForDeadProcesses();
-    const existingProcess = Db.findExistingProcess(fullCommand, cwd);
+    const existingProcess = Db.findExistingProcess(fullCommand, serviceCwd);
     
+    let killedProcesses;
     if (existingProcess) {
-        const killOutput = await handleKill({ cwd, commandName });
-        if (killOutput.killedProcesses) {
-            printKillOutput(killOutput);
-        }
+        const killOutput = await handleKill({ projectDir, commandName });
+        killedProcesses = killOutput.killedProcesses;
     }
 
-    // Allocate port and create database entry
-    const assignedPort = await allocatePort(cwd);
-    const launchId = Db.createProcessEntry(commandName, fullCommand, cwd, assignedPort);
+    // Create database entry
+    const launchId = Db.createProcessEntry(commandName, fullCommand, serviceCwd, setupJsonDir);
     
     // Launch the process using candle-process-wrapper in detached mode
     const commandParts = fullCommand.split(' ');
     const command = commandParts[0];
     const args = commandParts.slice(1);
     
+    // Set up environment with any service-specific env vars
+    const processEnv = {
+        ...process.env,
+        ...env
+    };
+    
     const wrapperInput: WrapperInput = {
         command: command,
         args: args,
-        cwd: cwd,
+        cwd: serviceCwd,
         launchId: launchId,
-        assignedPort: assignedPort
+        env: processEnv
     };
     
     let wrapperProcess: ChildProcess;
@@ -111,11 +153,133 @@ export async function handleRun(req: RunOptions): Promise<void> {
             Db.updateProcessWithWrapperPid(launchId, wrapperProcess.pid);
         }
     } catch (error) {
-        console.error('Failed to start wrapper process:', error);
-        process.exit(1);
+        throw new Error(`Failed to start wrapper process: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    console.log(`[Started '${fullCommand}', with assigned PORT: ${assignedPort}. Press Ctrl+C to exit.]`);
+    const result: RunOutput = {
+        service: {
+            name: commandName,
+            command: fullCommand,
+            directory: serviceCwd,
+            pid: undefined, // Will be set by wrapper
+            wrapperPid: wrapperProcess.pid
+        },
+        message: req.watchLogs 
+            ? `Started '${fullCommand}' in ${serviceCwd}. Press Ctrl+C to exit.`
+            : `Started '${fullCommand}' in ${serviceCwd}.`,
+        killedProcesses
+    };
 
-    await watchExistingProcess({ launchId, exitAfterMs, consoleOutputFormat });
+    if (req.watchLogs) {
+        await watchExistingProcess({ projectDir: setupJsonDir, commandName, consoleOutputFormat });
+    }
+
+    return result;
 }
+
+async function startSingleService(cwd: string, commandName: string): Promise<{ name: string; command: string; directory: string; pid?: number; wrapperPid?: number; success: boolean; error?: string; }> {
+    try {
+        // Get the command to run from setup config
+        const serviceInfo = findProjectStartCommand(commandName);
+        if (!serviceInfo) {
+            const projectDir = findProjectDir(cwd);
+            throw new NeedRunCommandError(projectDir, commandName);
+        }
+        
+        const { command: fullCommand, serviceCwd, env, setupJsonDir } = serviceInfo;
+
+        // Check if there's already an existing process for this service
+        Db.checkForDeadProcesses();
+        const existingProcess = Db.findExistingProcess(fullCommand, serviceCwd);
+        
+        if (existingProcess) {
+            const projectDir = findProjectDir(cwd);
+            const killOutput = await handleKill({ projectDir, commandName });
+        }
+
+        // Create database entry
+        const launchId = Db.createProcessEntry(commandName, fullCommand, serviceCwd, setupJsonDir);
+        
+        // Launch the process using candle-process-wrapper in detached mode
+        const commandParts = fullCommand.split(' ');
+        const command = commandParts[0];
+        const args = commandParts.slice(1);
+        
+        // Set up environment with any service-specific env vars
+        const processEnv = {
+            ...process.env,
+            ...env
+        };
+        
+        const wrapperInput: WrapperInput = {
+            command: command,
+            args: args,
+            cwd: serviceCwd,
+            launchId: launchId,
+            env: processEnv
+        };
+        
+        const wrapperProcess = startDetachedWrappedProcess(wrapperInput);
+        
+        // Store the wrapper PID in the database
+        if (wrapperProcess.pid) {
+            Db.updateProcessWithWrapperPid(launchId, wrapperProcess.pid);
+        }
+
+        return {
+            name: commandName,
+            command: fullCommand,
+            directory: serviceCwd,
+            pid: undefined, // Will be set by wrapper
+            wrapperPid: wrapperProcess.pid,
+            success: true
+        };
+    } catch (error) {
+        return {
+            name: commandName,
+            command: '',
+            directory: cwd,
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+        };
+    }
+}
+
+export async function handleStart(req: StartOptions): Promise<StartOutput> {
+    const cwd = req.cwd || process.cwd();
+    const commandNames = req.commandNames || [];
+    
+    // If no service names provided, start the default service
+    if (commandNames.length === 0) {
+        const result = await startSingleService(cwd, '');
+        return {
+            services: [result],
+            summary: {
+                totalServices: 1,
+                successCount: result.success ? 1 : 0,
+                failureCount: result.success ? 0 : 1
+            }
+        };
+    }
+    
+    // Start each service
+    const services = [];
+    
+    for (const commandName of commandNames) {
+        const result = await startSingleService(cwd, commandName);
+        services.push(result);
+    }
+    
+    const successCount = services.filter(s => s.success).length;
+    const failureCount = services.filter(s => !s.success).length;
+    
+    return {
+        services,
+        summary: {
+            totalServices: services.length,
+            successCount,
+            failureCount
+        }
+    };
+}
+

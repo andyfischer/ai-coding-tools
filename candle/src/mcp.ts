@@ -13,9 +13,41 @@ import { infoLog, getProcessLogs } from './logs';
 import { handleRun } from './handleRun';
 import { handleKill } from './handleKill';
 import { handleRestart } from './handleRestart';
-import { handleSetCommand } from './handleSetCommand';
 import { handleList } from './handleList';
 import { NeedRunCommandError } from './errors';
+import { findProjectDir, findSetupFile, findServiceByName, } from './setupFile';
+import { addServerConfig } from './addServerConfig';
+
+// Console.log wrapper for collecting logs
+class ConsoleLogWrapper {
+  private collectedLogs: string[] = [];
+  private originalConsoleLog = console.log;
+  private isWrapped = false;
+
+  wrap() {
+    if (this.isWrapped) return;
+    
+    console.log = (...args: any[]) => {
+      const logMessage = args.map(arg => 
+        typeof arg === 'string' ? arg : JSON.stringify(arg)
+      ).join(' ');
+      this.collectedLogs.push(logMessage);
+      this.originalConsoleLog(...args);
+    };
+    this.isWrapped = true;
+  }
+
+  reset() {
+    console.log = this.originalConsoleLog;
+    this.isWrapped = false;
+  }
+
+  getAndClearLogs(): string[] {
+    const logs = [...this.collectedLogs];
+    this.collectedLogs = [];
+    return logs;
+  }
+}
 
 const DEFAULT_LOGS_LIMIT = 200;
 
@@ -32,59 +64,11 @@ export interface ToolDefinition {
 
 const toolDefinitions: ToolDefinition[] = [
   {
-    name: 'SetCommand',
-    description: 'Configure a run command for this directory',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        command: {
-          type: 'string',
-          description: 'The command to set as the default run command',
-        },
-        cwd: {
-          type: 'string',
-          description: 'Current working directory (if different from process.cwd())',
-        },
-        commandName: {
-          type: 'string',
-          description: `Name of the command to set (optional). This is only needed if `
-          +`there will be multiple services for the same directory. Examples: "web", "api", "tests", etc. `
-          +`If this project only has one 'service', then leave this blank.`,
-        },
-      },
-      required: ['command'],
-    },
-    handler: async (args) => {
-      const command = args?.command as string;
-      const cwd = args?.cwd as string | undefined || process.cwd();
-      const commandName = args?.commandName as string | undefined;
-      
-      if (!command) {
-        infoLog('MCP: SetCommand error - command is required');
-        throw new McpError(ErrorCode.InvalidRequest, 'command is required');
-      }
-      
-      await handleSetCommand({ commandString: command, cwd, commandName });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Set run command for ${cwd}: ${command}`,
-          },
-        ],
-      };
-    },
-  },
-  {
     name: 'ListServices',
     description: 'List services with structured output',
     inputSchema: {
       type: 'object',
       properties: {
-        cwd: {
-          type: 'string',
-          description: 'Current working directory to filter services by (optional)',
-        },
         showAll: {
           type: 'boolean',
           description: 'Show all services or just current directory (optional)',
@@ -92,73 +76,85 @@ const toolDefinitions: ToolDefinition[] = [
       },
     },
     handler: async (args) => {
-      const cwd = args?.cwd as string | undefined;
       const showAll = args?.showAll as boolean | undefined;
       
-      // Set process.cwd() temporarily if cwd is provided
-      const originalCwd = process.cwd();
-      if (cwd) {
-        process.chdir(cwd);
-      }
-      
+      const logWrapper = new ConsoleLogWrapper();
+      logWrapper.wrap();
       try {
         const listOutput = await handleList({ showAll });
+        const logs = logWrapper.getAndClearLogs();
+        
+        let responseText = '';
+        if (logs.length > 0) {
+          responseText = logs.join('\n') + '\n';
+        }
+        responseText += JSON.stringify(listOutput, null, 2);
         
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(listOutput, null, 2),
+              text: responseText,
             },
           ],
         };
       } finally {
-        // Restore original cwd
-        if (cwd) {
-          process.chdir(originalCwd);
-        }
+        logWrapper.reset();
       }
     },
   },
   {
     name: 'GetLogs',
-    description: 'Get recent logs for the service in the current directory',
+    description: 'Get recent logs for a specific service',
     inputSchema: {
       type: 'object',
       properties: {
-        cwd: {
+        name: {
           type: 'string',
-          description: 'Current working directory (if different from process.cwd())',
-        },
-        commandName: {
-          type: 'string',
-          description: 'Name of the command to get logs for (defaults to "default")',
+          description: 'Name of the service to get logs for',
         },
         limit: {
           type: 'number',
           description: 'Maximum number of log lines to return (optional)',
         },
       },
+      required: ['name'],
     },
     handler: async (args) => {
-      const cwd = args?.cwd as string | undefined || process.cwd();
       const limit = args?.limit ?? DEFAULT_LOGS_LIMIT;
-      const commandName = args?.commandName as string | undefined || 'default';
+      const serviceName = args?.name as string;
 
-      // Get logs using working directory and command name
+      if (!serviceName) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name is required');
+      }
+
+      // Make sure the service actually exists
+      const setupResult = findSetupFile(process.cwd());
+      
+      if (!setupResult) {
+        throw new McpError(ErrorCode.InvalidRequest, 'No .candle-setup.json file found');
+      }
+      
+      const service = findServiceByName(setupResult.config, serviceName);
+      if (!service) {
+        throw new McpError(ErrorCode.InvalidRequest, `Service '${serviceName}' not found in .candle-setup.json`);
+      }
+      
+      const projectDir = findProjectDir();
+
+      // Get logs using working directory and service name
       const logs = getProcessLogs({ 
-        workingDirectory: cwd, 
-        commandName,
+        projectDir,
+        commandName: serviceName,
         limit 
       });
       
       if (logs.length === 0) {
-        infoLog(`MCP: GetLogs - no logs found for command '${commandName}' in working directory: ${cwd}`);
-        throw new McpError(ErrorCode.InvalidRequest, `No logs found for command '${commandName}' in working directory: ${cwd}`);
+        infoLog(`MCP: GetLogs - no logs found for service '${serviceName}' in project directory: ${projectDir}`);
+        throw new McpError(ErrorCode.InvalidRequest, `No logs found for service '${serviceName}' in project directory: ${projectDir}`);
       }
       
       const formattedLogs = logs
-        .reverse()
         .map((log: ProcessLog) => `[${new Date(log.timestamp * 1000).toISOString()}] ${log.content}`)
         .join('\n');
 
@@ -174,92 +170,263 @@ const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: 'StartService',
-    description: 'Start the registered dev server for the current directory',
+    description: 'Start a specific service',
     inputSchema: {
       type: 'object',
       properties: {
-        cwd: {
+        name: {
           type: 'string',
-          description: 'Current working directory (if different from process.cwd())',
-        },
-        commandName: {
-          type: 'string',
-          description: 'Name of the command to start (optional)',
+          description: 'Name of the service to start (optional - uses default service if not provided)',
         },
       },
     },
     handler: async (args) => {
-      const cwd = args?.cwd as string | undefined || process.cwd();
-      const commandName = args?.commandName as string | undefined;
-      await handleRun({ cwd, commandName, exitAfterMs: 3000, consoleOutputFormat: 'pretty' });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Service started successfully in ${cwd}`,
-          },
-        ],
-      };
+      const serviceName = args?.name as string | undefined;
+      const projectDir = findProjectDir();
+      
+      // Find the setup file and resolve the actual service name
+      const setupResult = findSetupFile();
+      if (!setupResult) {
+        throw new McpError(ErrorCode.InvalidRequest, 'No .candle-setup.json file found');
+      }
+      
+      const service = findServiceByName(setupResult.config, serviceName);
+      if (!service) {
+        if (serviceName) {
+          throw new McpError(ErrorCode.InvalidRequest, `Service '${serviceName}' not found in .candle-setup.json`);
+        } else {
+          throw new McpError(ErrorCode.InvalidRequest, 'No services configured and no service name provided');
+        }
+      }
+      
+      const logWrapper = new ConsoleLogWrapper();
+      logWrapper.wrap();
+      try {
+        // Use the resolved service name for handleRun
+        const runOutput = await handleRun({ projectDir, commandName: service.name, watchLogs: false, consoleOutputFormat: 'pretty' });
+        const logs = logWrapper.getAndClearLogs();
+        
+        let responseText = '';
+        if (logs.length > 0) {
+          responseText = logs.join('\n') + '\n';
+        }
+        responseText += runOutput.message;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: responseText,
+            },
+          ],
+        };
+      } finally {
+        logWrapper.reset();
+      }
     },
   },
   {
     name: 'KillService',
-    description: 'Kill the running server for the current directory',
+    description: 'Kill a running service',
     inputSchema: {
       type: 'object',
       properties: {
-        cwd: {
+        name: {
           type: 'string',
-          description: 'Current working directory to filter processes by (optional)',
-        },
-        commandName: {
-          type: 'string',
-          description: 'Name of the command to kill (optional, defaults to "default")',
+          description: 'Name of the service to kill (optional - uses default service if not provided)',
         },
       },
     },
     handler: async (args) => {
-      const cwd = args?.cwd as string | undefined || process.cwd();
-      const commandName = args?.commandName as string | undefined;
-      await handleKill({ cwd, commandName });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Service killed successfully in ${cwd}`,
-          },
-        ],
-      };
+      const serviceName = args?.name as string | undefined;
+      const projectDir = findProjectDir();
+      
+      const logWrapper = new ConsoleLogWrapper();
+      logWrapper.wrap();
+      try {
+        // If no service name provided, kill all services in project directory
+        if (!serviceName) {
+          const result = await handleKill({ projectDir, commandName: serviceName });
+          const logs = logWrapper.getAndClearLogs();
+          
+          let responseText = '';
+          if (logs.length > 0) {
+            responseText = logs.join('\n') + '\n';
+          }
+          responseText += result.message || `Service killed successfully`;
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: responseText,
+              },
+            ],
+          };
+        }
+        
+        // Find the setup file and validate the service exists
+        const setupResult = findSetupFile();
+        if (!setupResult) {
+          throw new McpError(ErrorCode.InvalidRequest, 'No .candle-setup.json file found');
+        }
+        
+        const service = findServiceByName(setupResult.config, serviceName);
+        if (!service) {
+          throw new McpError(ErrorCode.InvalidRequest, `Service '${serviceName}' not found in .candle-setup.json`);
+        }
+        
+        await handleKill({ projectDir, commandName: service.name });
+        const logs = logWrapper.getAndClearLogs();
+        
+        let responseText = '';
+        if (logs.length > 0) {
+          responseText = logs.join('\n') + '\n';
+        }
+        responseText += `Service '${service.name}' killed successfully`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: responseText,
+            },
+          ],
+        };
+      } finally {
+        logWrapper.reset();
+      }
     },
   },
   {
     name: 'RestartService',
-    description: 'Restart the running server for the current directory',
+    description: 'Restart a running service',
     inputSchema: {
       type: 'object',
       properties: {
-        cwd: {
+        name: {
           type: 'string',
-          description: 'Current working directory (if different from process.cwd())',
-        },
-        commandName: {
-          type: 'string',
-          description: 'Name of the command to restart (optional, defaults to "default")',
+          description: 'Name of the service to restart (optional - uses default service if not provided)',
         },
       },
     },
     handler: async (args) => {
-      const cwd = args?.cwd as string | undefined || process.cwd();
-      const commandName = args?.commandName as string | undefined;
-      await handleRestart({ cwd, commandName, consoleOutputFormat: 'pretty' });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Service restarted successfully in ${cwd}`,
-          },
-        ],
-      };
+      const serviceName = args?.name as string | undefined;
+      const projectDir = findProjectDir();
+      
+      // Find the setup file and resolve the actual service name
+      const setupResult = findSetupFile();
+      if (!setupResult) {
+        throw new McpError(ErrorCode.InvalidRequest, 'No .candle-setup.json file found');
+      }
+      
+      const service = findServiceByName(setupResult.config, serviceName);
+      if (!service) {
+        if (serviceName) {
+          throw new McpError(ErrorCode.InvalidRequest, `Service '${serviceName}' not found in .candle-setup.json`);
+        } else {
+          throw new McpError(ErrorCode.InvalidRequest, 'No services configured and no service name provided');
+        }
+      }
+      
+      const logWrapper = new ConsoleLogWrapper();
+      logWrapper.wrap();
+      try {
+        await handleRestart({
+          projectDir,
+          commandName: service.name,
+          consoleOutputFormat: 'pretty',
+          watchLogs: false,
+         });
+        const logs = logWrapper.getAndClearLogs();
+        
+        let responseText = '';
+        if (logs.length > 0) {
+          responseText = logs.join('\n') + '\n';
+        }
+        responseText += `Service '${service.name}' restarted successfully`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: responseText,
+            },
+          ],
+        };
+      } finally {
+        logWrapper.reset();
+      }
+    },
+  },
+  {
+    name: 'AddServerConfig',
+    description: 'Add a new server configuration to .candle-setup.json',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Name of the service',
+        },
+        shell: {
+          type: 'string',
+          description: 'Shell command to run the service',
+        },
+        root: {
+          type: 'string',
+          description: 'Root directory for the service (optional)',
+        },
+        env: {
+          type: 'object',
+          description: 'Environment variables for the service (optional)',
+        },
+        default: {
+          type: 'boolean',
+          description: 'Mark this service as default (optional)',
+        },
+      },
+      required: ['name', 'shell'],
+    },
+    handler: async (args) => {
+      const { name, shell, root, env, default: isDefault } = args;
+      
+      if (!name || !shell) {
+        throw new McpError(ErrorCode.InvalidRequest, 'Service name and shell command are required');
+      }
+      
+      const logWrapper = new ConsoleLogWrapper();
+      logWrapper.wrap();
+      try {
+        addServerConfig({
+          name,
+          shell,
+          root,
+          env,
+          default: isDefault,
+        });
+        
+        const logs = logWrapper.getAndClearLogs();
+        
+        let responseText = '';
+        if (logs.length > 0) {
+          responseText = logs.join('\n') + '\n';
+        }
+        responseText += `Service '${name}' added successfully to .candle-setup.json`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: responseText,
+            },
+          ],
+        };
+      } catch (error) {
+        throw new McpError(ErrorCode.InvalidRequest, error.message);
+      } finally {
+        logWrapper.reset();
+      }
     },
   },
 ];
@@ -276,7 +443,6 @@ export async function serveMCP() {
     {
       capabilities: {
         tools: {},
-        resources: {},
       },
       instructions: 'Tool for running and managing local dev servers. Use this when launching any local servers, including '
       + 'web servers, APIs, and other services.',
@@ -318,7 +484,7 @@ export async function serveMCP() {
       if (error instanceof NeedRunCommandError) {
         throw new McpError(
           ErrorCode.InvalidRequest, 
-          `No run command configured for ${error.cwd}. Please use SetCommand first to configure a command for this directory.`
+          `No .candle-setup.json file found or service '${error.commandName}' not configured in ${error.cwd}. Please create a .candle-setup.json file to define your services.`
         );
       }
       infoLog(`MCP: ${name} error:`, error);

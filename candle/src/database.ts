@@ -28,7 +28,7 @@ const schema = {
             command_name text not null,
             command_str text not null,
             working_directory text not null,
-            assigned_port integer,
+            project_dir text not null,
             start_time integer not null,
             end_time integer,
             is_running integer not null default 1,
@@ -37,27 +37,15 @@ const schema = {
         )`,
         `create table process_output(
             id integer primary key,
-            launch_id integer not null,
+            command_name text not null,
+            project_dir text not null,
             line_number integer not null,
             content text not null,
             log_type integer not null,
             timestamp integer not null default (strftime('%s', 'now'))
         )`,
-        `create table project_start_commands(
-            project_dir text not null,
-            command_name text not null,
-            command_str text not null,
-            created_at integer not null default (strftime('%s', 'now')),
-            updated_at integer not null default (strftime('%s', 'now'))
-        )`,
-        `create table project_assigned_ports(
-            project_dir text not null,
-            assigned_port integer not null,
-            created_at integer not null default (strftime('%s', 'now')),
-            updated_at integer not null default (strftime('%s', 'now')),
-            primary key(project_dir, assigned_port)
-        )`,
-        `create index idx_process_output_launch_id on process_output(launch_id)`,
+        `create index idx_process_output_command_name on process_output(command_name)`,
+        `create index idx_process_output_project_dir on process_output(project_dir)`,
         `create index idx_processes_is_running on processes(is_running)`,
         `create index idx_processes_pid on processes(pid)`
     ]
@@ -104,7 +92,7 @@ export interface ProcessRow {
     command_name: string;
     command_str: string;
     working_directory: string;
-    assigned_port?: number;
+    project_dir: string;
     pid: number;
     wrapper_pid?: number;
     start_time: number;
@@ -116,29 +104,20 @@ export interface ProcessRow {
 
 export interface ProcessLog {
     id: number;
-    launch_id: number;
+    command_name: string;
+    project_dir: string;
     line_number: number;
     content: string;
     log_type: LogType;
     timestamp: number;
 }
 
-export function saveNewProcess(command: string, cwd: string, pid: number, port?: number): number {
+export function createProcessEntry(commandName: string, commandStr: string, cwd: string, projectDir: string): number {
     const db = getDatabase();
 
     const result = db.run(
-        'insert into processes(command, working_directory, pid, start_time, assigned_port) values(?, ?, ?, ?, ?)',
-        [command, cwd, pid, Math.floor(Date.now() / 1000), port || null]
-    );
-    return result.lastInsertRowid as number;
-}
-
-export function createProcessEntry(commandName: string, commandStr: string, cwd: string, assignedPort: number): number {
-    const db = getDatabase();
-
-    const result = db.run(
-        'insert into processes(command_name, command_str, working_directory, assigned_port, start_time, pid) values(?, ?, ?, ?, ?, ?)',
-        [commandName, commandStr, cwd, assignedPort, Math.floor(Date.now() / 1000), 0]
+        'insert into processes(command_name, command_str, working_directory, project_dir, start_time, pid) values(?, ?, ?, ?, ?, ?)',
+        [commandName, commandStr, cwd, projectDir, Math.floor(Date.now() / 1000), 0]
     );
     return result.lastInsertRowid as number;
 }
@@ -176,11 +155,11 @@ export function setProcessExited(launchId: number, exitCode: number): void {
 }
 
 
-export function logLine(launchId: number, lineNumber: number, content: string, logType: LogType): void {
+export function logLine(commandName: string, projectDir: string, lineNumber: number, content: string, logType: LogType): void {
     const db = getDatabase();
     db.run(
-        'insert into process_output(launch_id, line_number, content, log_type) values(?, ?, ?, ?)',
-        [launchId, lineNumber, content, logType]
+        'insert into process_output(command_name, project_dir, line_number, content, log_type) values(?, ?, ?, ?, ?)',
+        [commandName, projectDir, lineNumber, content, logType]
     );
 }
 
@@ -205,6 +184,17 @@ export function getRunningProcesses(): ProcessRow[] {
     
     const db = getDatabase();
     return db.list('select * from processes where is_running = ?', [RunningStatus.running]);
+}
+
+export function getRunningProcessesByProjectDir(projectDir: string): ProcessRow[] {
+    // First, clean up any dead processes in the database
+    checkForDeadProcesses();
+    
+    // Periodically clean up old logs and processes
+    databaseCleanup();
+    
+    const db = getDatabase();
+    return db.list('select * from processes where is_running = ? and project_dir = ?', [RunningStatus.running, projectDir]);
 }
 
 export function getAllProcesses(): ProcessRow[] {
@@ -261,13 +251,15 @@ export function databaseCleanup(): void {
     const logCutoff = now - (24 * 60 * 60); // 24 hours
     
     // Enforce max logs per process by keeping only the most recent logs
+    /* TODO revisit - right now this query gets too slow
     db.run(`delete from process_output where id not in (
         select id from process_output po1 
         where (
             select count(*) from process_output po2 
-            where po2.launch_id = po1.launch_id and po2.id >= po1.id
+            where po2.command_name = po1.command_name and po2.project_dir = po1.project_dir and po2.id >= po1.id
         ) <= ?
     )`, [MAX_LOGS_PER_PROCESS]);
+    */
     
     // Delete old process output logs
     db.run('delete from process_output where timestamp < ?', [logCutoff]);
@@ -282,7 +274,7 @@ export function databaseCleanup(): void {
     
     // Clean up orphaned logs (logs without corresponding processes)
     db.run(`delete from process_output 
-            where launch_id not in (select launch_id from processes)`);
+            where (command_name, project_dir) not in (select command_name, project_dir from processes)`);
     
     db.run('vacuum');
 }
@@ -310,66 +302,5 @@ export function isProcessRunning(pid: number): boolean {
     }
 }
 
-export function getProcessPort(launchId: number): number | undefined {
-    const db = getDatabase();
-    const result = db.get('select port from processes where launch_id = ?', [launchId]);
-    return result?.port;
-}
 
-export interface ProjectConfig {
-    project_dir: string;
-    command_name: string;
-    command_str: string;
-    created_at: number;
-    updated_at: number;
-}
-
-export interface ProjectAssignedPort {
-    project_dir: string;
-    assigned_port: number;
-    created_at: number;
-    updated_at: number;
-}
-
-export function getProjectConfig(projectDir: string, commandName: string = 'default'): ProjectConfig | undefined {
-    const db = getDatabase();
-    return db.get('select * from project_start_commands where project_dir = ? and command_name = ?', [projectDir, commandName]);
-}
-
-export function getSavedCommands(projectDir: string): ProjectConfig[] {
-    const db = getDatabase();
-    return db.list('select * from project_start_commands where project_dir = ? order by command_name', [projectDir]);
-}
-
-export function deleteProjectCommand(projectDir: string, commandName: string = 'default'): boolean {
-    const db = getDatabase();
-    const result = db.run('delete from project_start_commands where project_dir = ? and command_name = ?', [projectDir, commandName]);
-    return result.changes > 0;
-}
-
-export function getProjectAssignedPort(projectDir: string): number | undefined {
-    const db = getDatabase();
-    const result = db.get('select assigned_port from project_assigned_ports where project_dir = ?', [projectDir]);
-    return result?.assigned_port;
-}
-
-export function setProjectAssignedPort(projectDir: string, port: number): void {
-    const db = getDatabase();
-    const now = Math.floor(Date.now() / 1000);
-    db.run(
-        'insert or replace into project_assigned_ports(project_dir, assigned_port, created_at, updated_at) values(?, ?, ?, ?)',
-        [projectDir, port, now, now]
-    );
-}
-
-export function deleteProjectAssignedPort(projectDir: string): boolean {
-    const db = getDatabase();
-    const result = db.run('delete from project_assigned_ports where project_dir = ?', [projectDir]);
-    return result.changes > 0;
-}
-
-export function getAllProjectAssignedPorts(): ProjectAssignedPort[] {
-    const db = getDatabase();
-    return db.list('select * from project_assigned_ports order by project_dir');
-}
 

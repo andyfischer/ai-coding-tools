@@ -1,11 +1,14 @@
 import { handleKill } from './handleKill';
 import { handleRun } from './handleRun';
+import * as Db from './database';
+import { NeedRunCommandError } from './errors';
+import type { WrapperInput } from './runProcessInWrapper';
 
 interface RestartOptions {
-    commandName?: string;
-    setCommandString?: string;
-    cwd?: string;
+    projectDir: string;
+    commandName: string;
     consoleOutputFormat: 'pretty' | 'json';
+    watchLogs: boolean;
 }
 
 export interface RestartOutput {
@@ -18,42 +21,35 @@ export interface RestartOutput {
 }
 
 export async function handleRestart(options: RestartOptions): Promise<RestartOutput> {
-    const { commandName = 'default', setCommandString, cwd = process.cwd(), consoleOutputFormat } = options;
-    
+    const { projectDir, commandName, consoleOutputFormat, watchLogs } = options;
+
     try {
         // First kill the existing process
-        const killResult = await handleKill({ commandName, cwd });
+        const killResult = await handleKill({ projectDir, commandName });
         
         // Then start it again
-        await handleRun({ 
+        const runOutput = await handleRun({ 
+            projectDir,
             commandName, 
-            setCommandString, 
-            cwd, 
-            consoleOutputFormat 
+            consoleOutputFormat,
+            watchLogs,
         });
         
         return {
             success: true,
-            commandName,
-            directory: cwd,
-            killResult
+            commandName: commandName,
+            directory: projectDir,
+            killResult,
+            runResult: runOutput
         };
     } catch (error) {
         return {
             success: false,
-            commandName,
-            directory: cwd,
+            commandName: commandName,
+            directory: projectDir,
             killResult: null,
             message: `Failed to restart: ${error.message}`
         };
     }
 }
 
-export function printRestartOutput(restartOutput: RestartOutput): void {
-    if (restartOutput.success) {
-        // The individual kill and run commands will handle their own output
-        // No additional output needed for restart
-    } else {
-        console.error(restartOutput.message);
-    }
-}

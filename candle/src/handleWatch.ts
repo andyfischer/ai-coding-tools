@@ -2,22 +2,21 @@ import * as Db from './database';
 import { watchExistingProcess } from './watchExistingProcess';
 
 interface WatchCommandOptions {
-    cwd?: string; // Current working directory
-    commandName?: string; // Name of the command to watch (defaults to "default")
+    projectDir: string; // Current working directory
+    commandName: string; // Name of the command to watch
 }
 
-export async function handleWatch(options: WatchCommandOptions = {}): Promise<void> {
-    const cwd = options.cwd || process.cwd();
-    const commandName = options.commandName || 'default';
-    
-    // Find the running process to watch
-    const runningProcesses = Db.getRunningProcesses();
+export async function handleWatch(options: WatchCommandOptions): Promise<void> {
+    const { projectDir, commandName } = options;
+
+    // Find the running process to watch using projectDir and commandName
+    const runningProcesses = Db.getRunningProcessesByProjectDir(projectDir);
     const processToWatch = runningProcesses.find(process => 
-        process.working_directory === cwd && process.command_name === commandName
+        process.command_name === commandName
     );
     
     if (!processToWatch) {
-        console.log(`No running process found for command '${commandName}' in directory '${cwd}'.`);
+        console.log(`No running process found for command '${commandName}' in project '${projectDir}'.`);
         console.log('');
         console.log('Available running processes:');
         
@@ -39,13 +38,14 @@ export async function handleWatch(options: WatchCommandOptions = {}): Promise<vo
         return;
     }
     
-    console.log(`Watching process '${commandName}' (PID: ${processToWatch.pid}, Launch ID: ${processToWatch.launch_id})`);
+    console.log(`Watching process '${commandName}' (PID: ${processToWatch.pid})`);
     console.log('Press Ctrl+C to stop watching.');
     console.log('');
     
     // Start watching the process
     await watchExistingProcess({
-        launchId: processToWatch.launch_id,
+        projectDir,
+        commandName,
         consoleOutputFormat: 'pretty'
     });
 }

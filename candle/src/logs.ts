@@ -37,10 +37,11 @@ export function infoLog(...args: any[]): void {
 
 export interface LogSearchOptions {
     // Primary search parameters (preferred)
-    workingDirectory?: string;
+    projectDir?: string;
     commandName?: string;
     
-    // Legacy/specific search parameters
+    // Legacy parameters (deprecated)
+    workingDirectory?: string;
     launchId?: number;
     
     // Filtering parameters
@@ -52,37 +53,48 @@ export interface LogSearchOptions {
 export function getProcessLogs(options: LogSearchOptions): ProcessLog[] {
     const db = getDatabase();
     
-    const { launchId, commandName, workingDirectory, limit, sinceTimestamp, afterLogId } = options;
+    const { projectDir, commandName, limit, sinceTimestamp, afterLogId } = options;
     
     // Build SQL query dynamically
     let sql: string;
     let params: any[] = [];
-    
-    // Prioritize workingDirectory + commandName approach
-    if (workingDirectory !== undefined && commandName !== undefined) {
-        // Primary approach: lookup by working directory and command name
+
+    // Prioritize projectDir + commandName approach
+    if (projectDir !== undefined && commandName !== undefined) {
+        // Primary approach: lookup by project directory and command name
         sql = `select po.* from process_output po 
-               join processes p on po.launch_id = p.launch_id 
-               where p.working_directory = ? and p.command_name = ?`;
-        params = [workingDirectory, commandName];
-    } else if (workingDirectory !== undefined) {
-        // Fallback: lookup by working directory only (use default command)
+               where po.project_dir = ? and po.command_name = ?`;
+        params = [projectDir, commandName];
+    } else if (projectDir !== undefined) {
+        // Fallback: lookup by project directory only (use default command)
         sql = `select po.* from process_output po 
-               join processes p on po.launch_id = p.launch_id 
-               where p.working_directory = ? and p.command_name = 'default'`;
-        params = [workingDirectory];
+               where po.project_dir = ? and po.command_name = 'default'`;
+        params = [projectDir];
     } else if (commandName !== undefined) {
-        // Lookup by command name only (any working directory)
+        // Lookup by command name only (any project directory)
         sql = `select po.* from process_output po 
-               join processes p on po.launch_id = p.launch_id 
-               where p.command_name = ?`;
+               where po.command_name = ?`;
         params = [commandName];
-    } else if (launchId !== undefined) {
-        // Legacy approach: direct lookup by launch_id
-        sql = 'select po.* from process_output po where po.launch_id = ?';
-        params = [launchId];
+    } else if (options.workingDirectory !== undefined && options.commandName !== undefined) {
+        // Legacy approach: lookup by working directory and command name
+        sql = `select po.* from process_output po 
+               join processes p on po.command_name = p.command_name and po.project_dir = p.project_dir 
+               where p.working_directory = ? and p.command_name = ?`;
+        params = [options.workingDirectory, options.commandName];
+    } else if (options.workingDirectory !== undefined) {
+        // Legacy fallback: lookup by working directory only (use default command)
+        sql = `select po.* from process_output po 
+               join processes p on po.command_name = p.command_name and po.project_dir = p.project_dir 
+               where p.working_directory = ? and p.command_name = 'default'`;
+        params = [options.workingDirectory];
+    } else if (options.launchId !== undefined) {
+        // Legacy approach: direct lookup by launch_id - need to join with processes
+        sql = `select po.* from process_output po 
+               join processes p on po.command_name = p.command_name and po.project_dir = p.project_dir 
+               where p.launch_id = ?`;
+        params = [options.launchId];
     } else {
-        throw new Error('Must provide either (workingDirectory and/or commandName) or launchId');
+        throw new Error('Must provide either (projectDir and/or commandName) or legacy parameters');
     }
     
     // Add timestamp filtering
@@ -96,19 +108,18 @@ export function getProcessLogs(options: LogSearchOptions): ProcessLog[] {
         params.push(afterLogId);
     }
     
-    // Add ordering - for joined queries, order by process creation date first, then log order
-    if (launchId !== undefined) {
-        sql += ' order by line_number';
-    } else {
-        sql += ' order by p.created_at , po.line_number ';
-    }
+    // Order by 'desc' so that we get the most recent logs first.
+    sql += ' order by po.timestamp desc, po.line_number desc';
     
     if (limit !== undefined) {
         sql += ' limit ?';
         params.push(limit);
     }
 
-    return db.list(sql, params);
+    const found = db.list(sql, params);
+
+    // Return list in chronological order
+    return found.reverse();
 }
 
 function consoleLogStdout(format: 'pretty' | 'json', msg: string) {

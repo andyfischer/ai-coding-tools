@@ -6,13 +6,14 @@ import { consoleLogSystemMessage, consoleLogRow } from './logs'
 const INITIAL_LOG_COUNT = 100;
 
 interface WatchOptions {
-    launchId: number; // ID of the process to watch
+    projectDir: string;
+    commandName: string;
     exitAfterMs?: number; // Optional timeout to exit watching after a certain period
     consoleOutputFormat: 'pretty' | 'json'
 }
 
 export async function watchExistingProcess(options: WatchOptions): Promise<void> {
-    const { launchId, exitAfterMs, consoleOutputFormat } = options;
+    const { projectDir, commandName, exitAfterMs, consoleOutputFormat } = options;
     let lastSeenLogId = 0;
     const pollInterval = 1000; // 1 second
     let watching = true;
@@ -44,34 +45,31 @@ export async function watchExistingProcess(options: WatchOptions): Promise<void>
         });
     }
 
-    // Get process info to use working directory and command name for logs
-    const processInfo = Db.getProcessByLaunchId(launchId);
-    if (!processInfo) {
-        consoleLogSystemMessage(consoleOutputFormat, `Process with launch ID ${launchId} not found`);
-        return;
-    }
-    
     // Initial log fetch - limited to past 100 messages.
-    // Use launchId for specificity since we're watching a specific process instance
-    const initialLogs = getProcessLogs({ launchId, limit: INITIAL_LOG_COUNT });
+    const initialLogs = getProcessLogs({ projectDir, commandName, limit: INITIAL_LOG_COUNT });
     printLogs(initialLogs);
+    let processIsStillRunning = true;
     
     while (watching) {
-        const currentProcess = Db.getProcessByLaunchId(launchId);
+        // Find the current process using projectDir and commandName
+        const runningProcesses = Db.getRunningProcessesByProjectDir(projectDir);
+        const currentProcess = runningProcesses.find(p => p.command_name === commandName);
+        
         if (!currentProcess) {
-            consoleLogSystemMessage(consoleOutputFormat, `Process with launch ID ${launchId} not found`);
+            consoleLogSystemMessage(consoleOutputFormat, `Process '${commandName}' not found in project '${projectDir}'`);
+            processIsStillRunning = false;
             break;
         }
         
         // Print any new logs since the last seen log ID
-        // Continue using launchId for incremental log tracking
-        const logs = getProcessLogs({ launchId, afterLogId: lastSeenLogId });
+        const logs = getProcessLogs({ projectDir, commandName, afterLogId: lastSeenLogId });
         printLogs(logs);
         
         // Check if process is still running
         if (currentProcess.is_running !== RunningStatus.running) {
             const statusText = currentProcess.exit_code === 0 ? 'completed successfully' : `failed with exit code ${currentProcess.exit_code}`;
-            consoleLogSystemMessage(consoleOutputFormat, `Process with launch ID ${launchId} has stopped: ${statusText}`);
+            consoleLogSystemMessage(consoleOutputFormat, `Process '${commandName}' has stopped: ${statusText}`);
+            processIsStillRunning = false;
             break;
         }
         
@@ -84,5 +82,6 @@ export async function watchExistingProcess(options: WatchOptions): Promise<void>
         clearTimeout(timeoutId);
     }
     
-    consoleLogSystemMessage(consoleOutputFormat, 'Stopped watching, process is still running in background');
+    if (processIsStillRunning)
+        consoleLogSystemMessage(consoleOutputFormat, 'Stopped watching, process is still running in background');
 }
