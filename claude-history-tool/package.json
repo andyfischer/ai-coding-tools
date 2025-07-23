@@ -1,6 +1,6 @@
 {
   "name": "claude-history-tool",
-  "version": "1.0.0",
+  "version": "0.1.14",
   "description": "A tool to browse and view Claude chat history",
   "main": "dist/main/main.js",
   "scripts": {
@@ -82,7 +82,7 @@
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
   "build": {
     "appId": "com.andyfischer.claude-history-tool",
-    "productName": "Claude History Tool",
+    "productName": "Claude History",
     "directories": {
       "output": "release"
     },
@@ -108,22 +108,19 @@
         }
       ],
       "artifactName": "Claude-History-Tool-Mac-${arch}.${ext}",
-      "notarize": {
-        "teamId": "${APPLE_TEAM_ID}"
-      }
+      "notarize": true
     },
     "win": {
       "icon": "assets/icon.icns",
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
           "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         },
         {
-          "target": "portable",
+          "target": "zip",
           "arch": [
             "x64"
           ]
@@ -131,15 +128,9 @@
       ],
       "artifactName": "Claude-History-Tool-Windows-${arch}.${ext}"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    },
     "dmg": {
       "icon": "assets/icon.icns",
-      "title": "Claude History Tool",
+      "title": "Claude History",
       "contents": [
         {
           "x": 110,
