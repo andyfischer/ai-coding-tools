@@ -4,3 +4,6 @@ dist
 # Environment variables
 .env
 .env.local
+
+release
+.DS_Store

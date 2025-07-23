@@ -5,23 +5,21 @@
   "main": "dist/main/main.js",
   "scripts": {
     "build": "npm run build:main && npm run build:renderer",
-    "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "parcel build src/renderer/index.html --dist-dir dist/renderer",
-    "dev:main": "tsc -p tsconfig.main.json --watch",
-    "dev:renderer": "parcel serve --target renderer --port ${RENDERER_PORT:-3447}",
+    "build:main": "webpack --config webpack.main.config.js --mode production",
+    "build:renderer": "webpack --config webpack.renderer.config.js --mode production",
+    "dev:main": "webpack --config webpack.main.config.js --watch --mode development",
+    "dev:renderer": "webpack serve --config webpack.renderer.config.js --mode development",
     "dev:electron": "NODE_ENV=development electron .",
     "start": "electron .",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "storybook": "storybook dev -p ${STORYBOOK_PORT:-3448}",
     "build-storybook": "storybook build",
-    "rebuild": "electron rebuild"
-  },
-  "targets": {
-    "renderer": {
-      "source": "src/renderer/index.html",
-      "distDir": "dist"
-    }
+    "rebuild": "electron rebuild",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:dmg": "npm run build && electron-builder --mac --publish=never",
+    "dist:mac-dir": "npm run build && electron-builder --mac dir"
   },
   "keywords": [
     "electron",
@@ -32,7 +30,6 @@
   "author": "Andy Fischer",
   "license": "MIT",
   "devDependencies": {
-    "@parcel/transformer-sass": "2.15.4",
     "@storybook/addon-essentials": "^8.3.0",
     "@storybook/addon-interactions": "^8.3.0",
     "@storybook/addon-links": "^8.3.0",
@@ -49,15 +46,27 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^9.0.1",
+    "copy-webpack-plugin": "13.0.0",
+    "css-loader": "7.1.2",
+    "dotenv": "17.2.0",
     "electron": "^32.0.0",
+    "electron-builder": "26.0.12",
     "electron-rebuild": "3.2.9",
+    "html-webpack-plugin": "5.6.3",
     "jsdom": "^25.0.0",
-    "parcel": "^2.12.0",
     "process": "^0.11.10",
+    "sass": "1.89.2",
+    "sass-loader": "16.0.5",
     "storybook": "^8.3.0",
+    "style-loader": "4.0.0",
+    "ts-loader": "9.5.2",
     "typescript": "^5.5.4",
     "vite": "^5.4.0",
-    "vitest": "3.2.4"
+    "vitest": "3.2.4",
+    "webpack": "5.100.2",
+    "webpack-cli": "6.0.1",
+    "webpack-dev-server": "5.2.2",
+    "webpack-node-externals": "3.0.0"
   },
   "dependencies": {
     "@andyfischer/sqlite-wrapper": "^0.3.1",
@@ -67,5 +76,50 @@
     "react-icons": "5.5.0",
     "react-router-dom": "^6.26.0"
   },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
+  "build": {
+    "appId": "com.andyfischer.claude-history-tool",
+    "productName": "Claude History Tool",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "icon": "assets/icon.icns",
+      "title": "Claude History Tool",
+      "contents": [
+        {
+          "x": 110,
+          "y": 150
+        },
+        {
+          "x": 240,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
 }

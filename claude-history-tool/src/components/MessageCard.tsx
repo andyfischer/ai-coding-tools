@@ -187,8 +187,8 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
         <>
           <div onClick={(evt) => evt.stopPropagation()}>
             {textContent}
+            {toolUseContent}
           </div>
-          {toolUseContent}
         </>
       )}
 

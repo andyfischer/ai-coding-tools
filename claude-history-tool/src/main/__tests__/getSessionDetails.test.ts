@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ChatMessage } from '../../types';
-import { annotateInternalMessages } from '../getSessionDetails';
+import { annotateInternalMessages } from '../annotateInternalMessages';
 
 const SampleChat_WithTerminalControl: ChatMessage[] = [
   {

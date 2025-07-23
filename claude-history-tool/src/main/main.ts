@@ -2,10 +2,16 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import * as dotenv from 'dotenv';
 
-// Load environment variables from .env file
-dotenv.config();
+// Load environment variables from .env file only in development
+if (process.env.NODE_ENV === 'development') {
+  try {
+    const dotenv = require('dotenv');
+    dotenv.config();
+  } catch (error) {
+    // dotenv not available in production, which is fine
+  }
+}
 import { ChatMessage, ChatSession, ProjectDirectory } from '../types';
 import { getChatSessions } from './getChatSessions';
 import { getSessionDetails } from './getSessionDetails';
