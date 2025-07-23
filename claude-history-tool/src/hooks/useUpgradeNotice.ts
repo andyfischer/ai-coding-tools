@@ -7,7 +7,7 @@ export const useUpgradeNotice = () => {
     queryFn: async (): Promise<UpgradeNoticeResponse> => {
       try {
         const apiHostname = await window.electronAPI.getApiHostname();
-        const response = await fetch(`${apiHostname}/desktop-tool/upgrade-notice?appVersion=0.1.0`);
+        const response = await fetch(`${apiHostname}/desktop_tool/upgrade-notice?appVersion=0.1.0`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
