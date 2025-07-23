@@ -2,6 +2,10 @@
 
 A desktop application for browsing and viewing your Claude chat history.
 
+## Download
+
+Download the latest release [here](https://github.com/andyfischer/ai-coding-tools/releases).
+
 ## Features
 
 - **Browseable Session History**: View all your Claude conversations organized by project.

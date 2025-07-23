@@ -16,10 +16,14 @@
     "storybook": "storybook dev -p ${STORYBOOK_PORT:-3448}",
     "build-storybook": "storybook build",
     "rebuild": "electron rebuild",
+    "postinstall": "electron-builder install-app-deps",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
     "dist:dmg": "npm run build && electron-builder --mac --publish=never",
-    "dist:mac-dir": "npm run build && electron-builder --mac dir"
+    "dist:mac-dir": "npm run build && electron-builder --mac dir",
+    "dist:all": "npm run build && electron-builder -mw",
+    "publish": "npm run build && electron-builder --publish always"
   },
   "keywords": [
     "electron",
@@ -103,7 +107,36 @@
             "arm64"
           ]
         }
-      ]
+      ],
+      "artifactName": "Claude-History-Tool-Mac-${arch}.${ext}",
+      "notarize": {
+        "teamId": "${APPLE_TEAM_ID}"
+      }
+    },
+    "win": {
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Claude-History-Tool-Windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "dmg": {
       "icon": "assets/icon.icns",
