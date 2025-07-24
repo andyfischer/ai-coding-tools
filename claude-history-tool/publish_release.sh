@@ -4,8 +4,9 @@ set -e
 
 # Get the version from package.json
 VERSION=$(node -p "require('./package.json').version")
+TAG_NAME="claude-history-tool-v$VERSION"
 
-echo "Publishing release v$VERSION..."
+echo "Publishing release $TAG_NAME..."
 
 # Check if we're on main branch
 BRANCH=$(git branch --show-current)
@@ -21,17 +22,17 @@ if ! git diff-index --quiet HEAD --; then
 fi
 
 # Check if tag already exists
-if git tag -l | grep -q "v$VERSION"; then
-    echo "Error: Tag v$VERSION already exists"
+if git tag -l | grep -q "$TAG_NAME"; then
+    echo "Error: Tag $TAG_NAME already exists"
     exit 1
 fi
 
 # Create and push tag
-echo "Creating tag v$VERSION..."
-git tag "v$VERSION"
+echo "Creating tag $TAG_NAME..."
+git tag "$TAG_NAME"
 
 echo "Pushing tag to remote..."
-git push origin "v$VERSION"
+git push origin "$TAG_NAME"
 
-echo "Release v$VERSION published successfully!"
+echo "Release $TAG_NAME published successfully!"
 echo "GitHub Actions should now build and create the release."
