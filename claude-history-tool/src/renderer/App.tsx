@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route, useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChatList } from '../components/ChatList';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -22,14 +22,12 @@ const ChatListPage: React.FC = () => {
     queryKey: ['chatSessions'],
     queryFn: async () => {
       console.log('[ChatListPage] Calling getChatSessions...');
-      console.log('[ChatListPage] electronAPI available:', !!window.electronAPI);
-      
+
       if (!window.electronAPI) {
         throw new Error('Electron API not available');
       }
       
       const result = await window.electronAPI.getChatSessions();
-      console.log('[ChatListPage] getChatSessions result:', result);
       return result;
     },
     retry: 3,
@@ -54,6 +52,7 @@ const ChatListPage: React.FC = () => {
   }
 
   const handleSessionSelect = (session: ChatSession) => {
+    console.log('[ChatListPage] handleSessionSelect:', session);
     navigate(`/chat/${session.sessionId}`, { 
       state: { 
         expandedProjects: searchParams.get('expanded')?.split(',') || [],
@@ -132,7 +131,12 @@ const AppLayout: React.FC = () => {
   
   const activeView = location.pathname === '/analytics' ? 'analytics' : 'chats';
 
+  console.log('[AppLayout] activeView:', activeView);
+  console.log('[AppLayout] location:', location);
+
+
   const handleViewChange = (view: 'chats' | 'analytics') => {
+    console.log('[AppLayout] handleViewChange:', view);
     if (view === 'analytics') {
       navigate('/analytics');
     } else {
@@ -185,9 +189,9 @@ const AppLayout: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppLayout />
-    </BrowserRouter>
+    </HashRouter>
   );
 };
 

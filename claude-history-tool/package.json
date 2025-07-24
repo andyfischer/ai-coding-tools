@@ -9,7 +9,6 @@
     "build:renderer": "webpack --config webpack.renderer.config.js --mode production",
     "dev:main": "webpack --config webpack.main.config.js --watch --mode development",
     "dev:renderer": "webpack serve --config webpack.renderer.config.js --mode development",
-    "dev:electron": "NODE_ENV=development electron .",
     "start": "electron .",
     "test": "vitest",
     "test:ui": "vitest --ui",
