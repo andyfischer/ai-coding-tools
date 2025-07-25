@@ -1,4 +1,4 @@
-# Claude History Tool
+# Claude History tool
 
 A desktop application for browsing and viewing your Claude chat history.
 
@@ -13,6 +13,11 @@ Download the latest release [here](https://github.com/andyfischer/ai-coding-tool
 - **Full Tool Use**: See the full input & response data for each tool use.
 - **Token Costs**: See token cost per message.
 - **Analytics**: Presents some basic analytics about your sessions and tool use.
+
+## Data Usage and Privacy notice
+
+The "Claude History" tool does not transmit or upload or share your data in any way.
+All the related data remains private and local to your machine.
 
 ## Development
 
