@@ -7,6 +7,7 @@ export interface ServiceConfig {
     root?: string;
     env?: Record<string, string>;
     default?: boolean;
+    autoAssignPort?: boolean;
 }
 
 export interface CandleSetupConfig {

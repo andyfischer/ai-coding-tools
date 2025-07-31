@@ -1,4 +1,14 @@
 
+# 0.6.1
+
+  - Add `wait-for-log` command to help wait for services to start up.
+  - Console output improvements.
+  - Bug fixes and console print improvements.
+
+# 0.6.0
+
+ - Use a .candle-setup.json file instead of storing config settings in a database.
+
 # 0.5.1
 
  - update 'sqlite-wrapper' and 'streams' dependencies.

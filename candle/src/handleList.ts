@@ -110,3 +110,39 @@ function formatUptime(seconds: number): string {
     return parts.join(' ');
 }
 
+export function printListOutput(output: ListOutput): void {
+    if (output.message) {
+        console.log(output.message);
+        return;
+    }
+
+    if (output.processes.length === 0) {
+        console.log('No active processes found.');
+        return;
+    }
+
+    const headers = ['NAME', 'STATUS', 'PID', 'UPTIME', 'COMMAND', 'DIRECTORY'];
+    const rows = output.processes.map(process => [
+        process.serviceName,
+        process.status,
+        process.pid > 0 ? process.pid.toString() : '-',
+        process.uptime,
+        process.command,
+        process.workingDir
+    ]);
+
+    const columnWidths = headers.map((header, i) => 
+        Math.max(header.length, ...rows.map(row => row[i].length))
+    );
+
+    const formatRow = (row: string[]) => 
+        row.map((cell, i) => cell.padEnd(columnWidths[i])).join('  ');
+
+    console.log(formatRow(headers));
+    console.log(columnWidths.map(width => '-'.repeat(width)).join('  '));
+    
+    for (const row of rows) {
+        console.log(formatRow(row));
+    }
+}
+

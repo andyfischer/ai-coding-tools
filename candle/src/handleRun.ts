@@ -6,7 +6,8 @@ import type { WrapperInput } from './runProcessInWrapper';
 import { NeedRunCommandError } from './errors';
 import { watchExistingProcess } from './watchExistingProcess';
 import { handleKill } from './handleKill';
-import { findSetupFile, findServiceByName, getServiceCwd, findProjectDir } from './setupFile';
+import { findSetupFile, findServiceByName, getServiceCwd, findProjectDir, ServiceConfig } from './setupFile';
+import { assignPort } from './assignPort';
 
 interface RunOptions {
     projectDir: string
@@ -55,7 +56,7 @@ export interface StartOutput {
     };
 }
 
-export function findProjectStartCommand(commandName?: string): { command: string; serviceCwd: string; env: Record<string, string>; setupJsonDir: string } | null {
+export function findProjectStartCommand(commandName?: string): { command: string; serviceCwd: string; env: Record<string, string>; setupJsonDir: string; service: ServiceConfig } | null {
     const setupResult = findSetupFile();
     if (!setupResult) {
         return null;
@@ -74,7 +75,8 @@ export function findProjectStartCommand(commandName?: string): { command: string
         command: service.shell,
         serviceCwd,
         env,
-        setupJsonDir
+        setupJsonDir,
+        service
     };
 }
 
@@ -110,7 +112,7 @@ export async function handleRun(req: RunOptions): Promise<RunOutput> {
         throw new NeedRunCommandError(projectDir, commandName || 'default');
     }
     
-    const { command: fullCommand, serviceCwd, env, setupJsonDir } = serviceInfo;
+    const { command: fullCommand, serviceCwd, env, setupJsonDir, service } = serviceInfo;
 
     // Check if there's already an existing process for this service
     Db.checkForDeadProcesses();
@@ -122,8 +124,16 @@ export async function handleRun(req: RunOptions): Promise<RunOutput> {
         killedProcesses = killOutput.killedProcesses;
     }
 
-    // Create database entry
-    const launchId = Db.createProcessEntry(commandName, fullCommand, serviceCwd, setupJsonDir);
+    // Create database entry  
+    const actualCommandName = commandName || service.name;
+    const launchId = Db.createProcessEntry(actualCommandName, fullCommand, serviceCwd, setupJsonDir);
+    
+    // Assign port if auto-assignment is enabled
+    let assignedPort: number | undefined;
+    if (service.autoAssignPort) {
+        assignedPort = await assignPort();
+        Db.updateProcessWithAssignedPort(launchId, assignedPort);
+    }
     
     // Launch the process using candle-process-wrapper in detached mode
     const commandParts = fullCommand.split(' ');
@@ -135,6 +145,11 @@ export async function handleRun(req: RunOptions): Promise<RunOutput> {
         ...process.env,
         ...env
     };
+    
+    // Add PORT environment variable if port was assigned
+    if (assignedPort) {
+        processEnv.PORT = assignedPort.toString();
+    }
     
     const wrapperInput: WrapperInput = {
         command: command,
@@ -158,7 +173,7 @@ export async function handleRun(req: RunOptions): Promise<RunOutput> {
 
     const result: RunOutput = {
         service: {
-            name: commandName,
+            name: actualCommandName,
             command: fullCommand,
             directory: serviceCwd,
             pid: undefined, // Will be set by wrapper
@@ -171,7 +186,7 @@ export async function handleRun(req: RunOptions): Promise<RunOutput> {
     };
 
     if (req.watchLogs) {
-        await watchExistingProcess({ projectDir: setupJsonDir, commandName, consoleOutputFormat });
+        await watchExistingProcess({ projectDir: setupJsonDir, commandName: actualCommandName, consoleOutputFormat });
     }
 
     return result;
@@ -186,7 +201,7 @@ async function startSingleService(cwd: string, commandName: string): Promise<{ n
             throw new NeedRunCommandError(projectDir, commandName);
         }
         
-        const { command: fullCommand, serviceCwd, env, setupJsonDir } = serviceInfo;
+        const { command: fullCommand, serviceCwd, env, setupJsonDir, service } = serviceInfo;
 
         // Check if there's already an existing process for this service
         Db.checkForDeadProcesses();
@@ -198,7 +213,15 @@ async function startSingleService(cwd: string, commandName: string): Promise<{ n
         }
 
         // Create database entry
-        const launchId = Db.createProcessEntry(commandName, fullCommand, serviceCwd, setupJsonDir);
+        const actualCommandName = commandName || service.name;
+        const launchId = Db.createProcessEntry(actualCommandName, fullCommand, serviceCwd, setupJsonDir);
+        
+        // Assign port if auto-assignment is enabled
+        let assignedPort: number | undefined;
+        if (service.autoAssignPort) {
+            assignedPort = await assignPort();
+            Db.updateProcessWithAssignedPort(launchId, assignedPort);
+        }
         
         // Launch the process using candle-process-wrapper in detached mode
         const commandParts = fullCommand.split(' ');
@@ -210,6 +233,11 @@ async function startSingleService(cwd: string, commandName: string): Promise<{ n
             ...process.env,
             ...env
         };
+        
+        // Add PORT environment variable if port was assigned
+        if (assignedPort) {
+            processEnv.PORT = assignedPort.toString();
+        }
         
         const wrapperInput: WrapperInput = {
             command: command,
@@ -227,7 +255,7 @@ async function startSingleService(cwd: string, commandName: string): Promise<{ n
         }
 
         return {
-            name: commandName,
+            name: actualCommandName,
             command: fullCommand,
             directory: serviceCwd,
             pid: undefined, // Will be set by wrapper
@@ -236,7 +264,7 @@ async function startSingleService(cwd: string, commandName: string): Promise<{ n
         };
     } catch (error) {
         return {
-            name: commandName,
+            name: commandName || 'unknown',
             command: '',
             directory: cwd,
             success: false,

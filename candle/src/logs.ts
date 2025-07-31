@@ -154,6 +154,10 @@ export function consoleLogRow(format: 'pretty' | 'json', row: any) {
             break;
         case LogType.process_has_exited:
             consoleLogSystemMessage(format, row.content);
+            break;
+        case LogType.process_has_started:
+            consoleLogSystemMessage(format, row.content);
+            break;
     }
 }
 

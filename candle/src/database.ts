@@ -8,15 +8,13 @@ export enum LogType {
     stdout = 1,
     stderr = 2,
     process_has_exited = 3,
+    process_has_started = 4,
 };
 
 export enum RunningStatus {
     running = 1,
     stopped = 0,
 };
-
-const MAX_LOGS_PER_PROCESS = 10000;
-
 
 const schema = {
     name: 'CandleDatabase',
@@ -33,6 +31,7 @@ const schema = {
             end_time integer,
             is_running integer not null default 1,
             exit_code integer,
+            assigned_port integer,
             created_at integer not null default (strftime('%s', 'now'))
         )`,
         `create table process_output(
@@ -99,6 +98,7 @@ export interface ProcessRow {
     end_time?: number;
     is_running: RunningStatus;
     exit_code?: number;
+    assigned_port?: number;
     created_at: number;
 }
 
@@ -144,6 +144,20 @@ export function updateProcessWithPids(launchId: number, pid: number, wrapperPid:
         'update processes set pid = ?, wrapper_pid = ? where launch_id = ?',
         [pid, wrapperPid, launchId]
     );
+}
+
+export function updateProcessWithAssignedPort(launchId: number, assignedPort: number): void {
+    const db = getDatabase();
+    db.run(
+        'update processes set assigned_port = ? where launch_id = ?',
+        [assignedPort, launchId]
+    );
+}
+
+export function getAllAssignedPorts(): number[] {
+    const db = getDatabase();
+    const rows = db.list('select assigned_port from processes where assigned_port is not null', []);
+    return rows.map(row => row.assigned_port).filter(port => port != null);
 }
 
 export function setProcessExited(launchId: number, exitCode: number): void {

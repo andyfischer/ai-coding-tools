@@ -1,6 +1,7 @@
 import * as Db from './database';
 import treeKill from 'tree-kill';
 import { findSetupFile, findServiceByName, getServiceCwd } from './setupFile';
+import { killProcessTree } from './killProcessTree';
 
 interface KillCommandOptions {
     projectDir: string; // Current working directory
@@ -19,26 +20,6 @@ export interface KillOutput {
     message?: string;
 }
 
-async function tryKillProcessTree(pid: number): Promise<boolean> {
-    if (pid == null || pid == 0) {
-        throw new Error(`internal error: tryKillProcessTree called with invalid PID: ${pid}`);
-    }
-
-    return new Promise((resolve) => {
-        treeKill(pid, 'SIGTERM', (error: any) => {
-            if (error && error.code === 'ESRCH') {
-                // Process does not exist
-                resolve(false);
-            } else if (error) {
-                console.warn(`Warning: Could not kill process tree for PID ${pid}:`, error.message);
-                resolve(false);
-            } else {
-                resolve(true);
-            }
-        });
-    });
-}
-
 export async function handleKill(options: KillCommandOptions): Promise<KillOutput> {
     const { projectDir, commandName } = options;
 
@@ -52,15 +33,16 @@ export async function handleKill(options: KillCommandOptions): Promise<KillOutpu
             continue;
         }
 
+        // Kill the wrapper process if it exists
+        if (process.wrapper_pid) {
+            await killProcessTree(process.wrapper_pid);
+        }
+
         // Kill the main process and its entire process tree
         if (process.pid) {
-            await tryKillProcessTree(process.pid);
+            await killProcessTree(process.pid);
         }
         
-        // Also kill the wrapper process tree if it exists
-        if (process.wrapper_pid) {
-            await tryKillProcessTree(process.wrapper_pid);
-        }
 
         killedProcesses.push({
             command: process.command_name,

@@ -1,7 +1,7 @@
 import * as Db from './database';
-import { getProcessLogs } from './logs';
 import { LogType, RunningStatus } from './database';
-import { consoleLogSystemMessage, consoleLogRow } from './logs'
+import { consoleLogSystemMessage, consoleLogRow } from './logs';
+import { LogIterator } from './LogIterator';
 
 const INITIAL_LOG_COUNT = 100;
 
@@ -14,7 +14,7 @@ interface WatchOptions {
 
 export async function watchExistingProcess(options: WatchOptions): Promise<void> {
     const { projectDir, commandName, exitAfterMs, consoleOutputFormat } = options;
-    let lastSeenLogId = 0;
+    const logIterator = new LogIterator({ projectDir, commandName });
     const pollInterval = 1000; // 1 second
     let watching = true;
     
@@ -41,13 +41,11 @@ export async function watchExistingProcess(options: WatchOptions): Promise<void>
     function printLogs(logs: { id: number; content: string; log_type: LogType }[]): void {
         logs.forEach(log => {
             consoleLogRow(consoleOutputFormat, log);
-            lastSeenLogId = Math.max(lastSeenLogId, log.id);
         });
     }
 
-    // Initial log fetch - limited to past 100 messages.
-    const initialLogs = getProcessLogs({ projectDir, commandName, limit: INITIAL_LOG_COUNT });
-    printLogs(initialLogs);
+    // Initial log fetch
+    printLogs(logIterator.getNextLogs({ limit: INITIAL_LOG_COUNT }));
     let processIsStillRunning = true;
     
     while (watching) {
@@ -62,8 +60,7 @@ export async function watchExistingProcess(options: WatchOptions): Promise<void>
         }
         
         // Print any new logs since the last seen log ID
-        const logs = getProcessLogs({ projectDir, commandName, afterLogId: lastSeenLogId });
-        printLogs(logs);
+        printLogs(logIterator.getNextLogs());
         
         // Check if process is still running
         if (currentProcess.is_running !== RunningStatus.running) {

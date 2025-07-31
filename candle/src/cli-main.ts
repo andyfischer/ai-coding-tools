@@ -4,20 +4,21 @@ import 'source-map-support/register';
 import * as yargs from 'yargs';
 import { Argv } from 'yargs';
 import { handleRun, handleStart } from './handleRun';
-import { handleList } from './handleList';
+import { handleList, printListOutput } from './handleList';
 import { handleKill } from './handleKill';
-import { handleKillAll } from './handleKillAll';
+import { handleKillAll, printKillAllOutput } from './handleKillAll';
 import { handleRestart } from './handleRestart';
 import { handleClearDatabaseCommand } from './handleClearDatabase';
 import { handleClearLogsCommand } from './handleClearLogs';
 import { handleLogs } from './handleLogs';
 import { handleWatch } from './handleWatch';
+import { handleWaitForLog } from './handleWaitForLog';
 import { NeedRunCommandError } from './errors';
 import { serveMCP } from './mcp';
 import { findProjectDir } from './setupFile';
 import { addServerConfig } from './addServerConfig';
 
-function parseArgs(): { command: string, commandName: string, commandNames: string[], mcp: boolean, shell?: string, root?: string, env?: Record<string, string>, default?: boolean } {
+function parseArgs(): { command: string, commandName: string, commandNames: string[], mcp: boolean, shell?: string, root?: string, env?: Record<string, string>, default?: boolean, message?: string, timeout?: number } {
     const args = process.argv.slice(2);
 
     const argv = yargs
@@ -35,6 +36,19 @@ function parseArgs(): { command: string, commandName: string, commandNames: stri
         .command('list-all', 'List all active processes', (yargs: Argv) => { })
         .command('logs [name]', 'Show recent logs for a process', () => {})
         .command('watch [name]', 'Watch live output from a running process', () => {})
+        .command('wait-for-log [name]', 'Wait for a specific log message to appear', (yargs: Argv) => {
+            yargs
+                .option('message', {
+                    describe: 'The log message to wait for',
+                    type: 'string',
+                    demandOption: true
+                })
+                .option('timeout', {
+                    describe: 'Timeout in seconds (default: 60)',
+                    type: 'number',
+                    default: 60
+                });
+        })
         .command('clear-logs [name]', 'Clear logs for commands in the current directory', () => {})
         .command('erase-database', 'Erase the database stored at ~/.candle', () => {})
         .command('add-service <name> <shell>', 'Add a new service to .candle-setup.json', (yargs: Argv) => {
@@ -73,12 +87,14 @@ function parseArgs(): { command: string, commandName: string, commandNames: stri
     const root = argv.root as string;
     const env = argv.env ? JSON.parse(argv.env as string) : undefined;
     const defaultFlag = argv.default as boolean;
+    const message = argv.message as string;
+    const timeout = argv.timeout as number;
     
-    return { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag };
+    return { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag, message, timeout };
 }
 
 export async function main(): Promise<void> {
-    const { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag } = parseArgs();
+    const { command, commandName, commandNames, mcp, shell, root, env, default: defaultFlag, message, timeout } = parseArgs();
 
     // Check if no arguments - print help
     if (process.argv.length === 2) {
@@ -128,28 +144,12 @@ export async function main(): Promise<void> {
             case 'list':
             case 'ls': {
                 const output = await handleList({ });
-                if (output.message) {
-                    console.log(output.message);
-                } else if (output.processes.length === 0) {
-                    console.log('No active processes found.');
-                } else {
-                    for (const process of output.processes) {
-                        console.log(`${process.serviceName} (${process.command}) - ${process.status} - PID: ${process.pid > 0 ? process.pid : '-'} - Directory: ${process.workingDir}`);
-                    }
-                }
+                printListOutput(output);
                 break;
             }
             case 'list-all': {
                 const output = await handleList({ showAll: true });
-                if (output.message) {
-                    console.log(output.message);
-                } else if (output.processes.length === 0) {
-                    console.log('No active processes found.');
-                } else {
-                    for (const process of output.processes) {
-                        console.log(`${process.serviceName} (${process.command}) - ${process.status} - PID: ${process.pid > 0 ? process.pid : '-'} - Directory: ${process.workingDir}`);
-                    }
-                }
+                printListOutput(output);
                 break;
             }
             case 'kill':
@@ -167,13 +167,7 @@ export async function main(): Promise<void> {
             }
             case 'kill-all': {
                 const output = await handleKillAll();
-                if (output.killedProcesses.length === 0) {
-                    console.log('No running processes found to kill');
-                } else {
-                    for (const process of output.killedProcesses) {
-                        console.log(`Killed '${process.command}' process with PID: ${process.pid}`);
-                    }
-                }
+                printKillAllOutput(output);
                 break;
             }
             case 'restart': {
@@ -199,6 +193,23 @@ export async function main(): Promise<void> {
             case 'watch': {
                 const projectDir = findProjectDir();
                 await handleWatch({ projectDir, commandName });
+                break;
+            }
+            case 'wait-for-log': {
+                const projectDir = findProjectDir();
+                const result = await handleWaitForLog({ 
+                    projectDir, 
+                    commandName: commandName || 'default', 
+                    message,
+                    timeoutMs: timeout * 1000 
+                });
+                if (result.success) {
+                    console.log(result.message);
+                    process.exit(0);
+                } else {
+                    console.error(result.message);
+                    process.exit(1);
+                }
                 break;
             }
             case 'clear-logs': {
@@ -227,7 +238,7 @@ export async function main(): Promise<void> {
             }
             default:
                 console.error(`Error: Unrecognized command '${command}'`);
-                console.error('Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, clear-logs, clear-database, add-service');
+                console.error('Available commands: run, start, list, ls, list-all, stop, kill, kill-all, restart, logs, watch, wait-for-log, clear-logs, clear-database, add-service');
                 process.exit(1);
         }
     } catch (error) {
