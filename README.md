@@ -9,8 +9,7 @@ Repo with open sourced tools for AI assisted coding.
 
 Electron based application that allows you to browse the full history of every Claude Code session.
 
-### [candle](https://github.com/andyfischer/ai-coding-tools/tree/main/candle#readme) ###
+### candle
 
-This is a small process manager for running local servers, with MCP integration.
-I wrote this because Claude Code was having a lot of trouble launching local servers by itself.
+This project was moved to a new repo, see: https://github.com/facetlayer/candle
 
